@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "confusion"
+version = "0.1.0"
+dependencies = [
+    "diffrax",
+    "einops",
+    "equinox",
+    "jax",
+    "matplotlib",
+    "ml_collections",
+    "optax",
+    "orbax",
+]

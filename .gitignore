@@ -1,0 +1,6 @@
+checkpoints/
+examples/mnist/data/
+figs/
+src/confusion.egg-info/
+venv/
+__pycache__/
