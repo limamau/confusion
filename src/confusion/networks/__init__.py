@@ -1,2 +1,10 @@
-from .mixer import Mixer2d
-from .unet import UNet
+__all__ = [
+    'Mixer',
+    'UNet',
+    'MLP',
+]
+
+from .images.mixer import Mixer
+from .images.unet import UNet
+
+from .points.mlp import MLP

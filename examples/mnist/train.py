@@ -1,7 +1,6 @@
 import argparse
 
 from confusion.checkpointing import Checkpointer
-from confusion.networks import Mixer2d
 from confusion.training import train
 from confusion.utils import normalize
 
@@ -15,7 +14,7 @@ def main(args):
     images, _, _ = normalize(images)
     labels, _, _ = normalize(labels)
     imgs_shape = images.shape[1:]
-    
+
     # get config
     config = get_config(args, imgs_shape)
     num_steps = config.num_steps
@@ -31,11 +30,11 @@ def main(args):
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     train_key = config.train_key
-    
+
     # use labels as condition or not
     if not is_conditional:
         labels = None
-    
+
     # get checkpointer for new checkpoints
     ckpter = Checkpointer(
         saving_path,
@@ -43,7 +42,7 @@ def main(args):
         save_every,
         erase=True,
     )
-    
+
     # training
     train(
         num_steps,
@@ -59,8 +58,8 @@ def main(args):
         train_key,
         labels,
     )
-    
-    
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run training with given configuration."
@@ -76,5 +75,5 @@ if __name__ == "__main__":
         required=True,
     )
     args = parser.parse_args()
-    
+
     main(args)

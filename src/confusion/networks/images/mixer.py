@@ -31,7 +31,7 @@ class MixerBlock(eqx.Module):
         return y
 
 
-class Mixer2d(eqx.Module):
+class Mixer(eqx.Module):
     conv_in: eqx.nn.Conv2d
     conv_out: eqx.nn.ConvTranspose2d
     blocks: list
@@ -56,7 +56,7 @@ class Mixer2d(eqx.Module):
         assert (width % patch_size) == 0
         num_patches = (height // patch_size) * (width // patch_size)
         inkey, outkey, *bkeys = jr.split(key, 2 + num_blocks)
-        
+
         if is_conditional:
             in_channels = input_size + 2
         else:
@@ -81,13 +81,13 @@ class Mixer2d(eqx.Module):
         t = jnp.array(t / self.t1)
         _, height, width = y.shape
         t = einops.repeat(t, "-> 1 h w", h=height, w=width)
-        
+
         if c is not None:
             c = einops.repeat(c, "-> 1 h w", h=height, w=width)
             y = jnp.concatenate([y, t, c])
         else:
             y = jnp.concatenate([y, t])
-        
+
         y = self.conv_in(y)
         _, patch_height, patch_width = y.shape
         y = einops.rearrange(y, "c h w -> c (h w)")
