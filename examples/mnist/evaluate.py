@@ -6,7 +6,7 @@ import jax.random as jr
 import matplotlib.pyplot as plt
 
 from confusion.checkpointing import Checkpointer
-from confusion.sampling import single_sample_fn
+from confusion.sampling import single_ode_sample_fn
 from confusion.utils import normalize
 
 from configs import get_config
@@ -19,7 +19,7 @@ def main(args):
     images, images_mean, images_std = normalize(images)
     _, labels_mean, labels_std = normalize(labels)
     images_shape = images.shape[1:]
-    
+
     # get config
     config = get_config(args, images_shape)
     network = config.network
@@ -35,14 +35,14 @@ def main(args):
     conds = config.conds
     sample_key = config.sample_key
     experiment_name = config.experiment_name
-    
+
     # get checkpointer to restore
     ckpter = Checkpointer(
         saving_path,
         max_save_to_keep,
         save_every,
     )
-    
+
     # restore
     opt_state = opt.init(eqx.filter(network, eqx.is_inexact_array))
     network, _ = ckpter.restore(network, opt_state)
@@ -52,7 +52,7 @@ def main(args):
         conds, _, _ = normalize(conds, labels_mean, labels_std)
     sample_key = jr.split(sample_key, sample_size**2)
     sample_fn = ft.partial(
-        single_sample_fn, network, int_beta, images_shape, dt0, t1,
+        single_ode_sample_fn, network, int_beta, images_shape, dt0, t1,
     )
     sample = jax.vmap(sample_fn)(conds, sample_key)
     sample = images_mean + images_std * sample
@@ -71,8 +71,8 @@ def main(args):
     )
     os.makedirs(figs_dir, exist_ok=True)
     plt.savefig(os.path.join(figs_dir, f"{experiment_name}.png"))
-    
-    
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run evaluation with given configuration."
@@ -88,5 +88,5 @@ if __name__ == "__main__":
         required=True,
     )
     args = parser.parse_args()
-    
+
     main(args)
