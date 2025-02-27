@@ -1,16 +1,19 @@
-import argparse, einops, jax, os
-import equinox as eqx
+import argparse
 import functools as ft
+import os
+
+import einops
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
+from configs import get_config
+from utils import load_mnist
 
 from confusion.checkpointing import Checkpointer
 from confusion.sampling import single_ode_sample_fn
 from confusion.utils import normalize
-
-from configs import get_config
-from utils import load_mnist
 
 
 def main(args):
@@ -52,7 +55,12 @@ def main(args):
         conds, _, _ = normalize(conds, labels_mean, labels_std)
     sample_key = jr.split(sample_key, sample_size**2)
     sample_fn = ft.partial(
-        single_ode_sample_fn, network, int_beta, images_shape, dt0, t1,
+        single_ode_sample_fn,
+        network,
+        int_beta,
+        images_shape,
+        dt0,
+        t1,
     )
     sample = jax.vmap(sample_fn)(conds, sample_key)
     sample = images_mean + images_std * sample
@@ -60,7 +68,10 @@ def main(args):
     images_min = jnp.min(images)
     sample = jnp.clip(sample, images_min, images_max)
     sample = einops.rearrange(
-        sample, "(n1 n2) 1 h w -> (n1 h) (n2 w)", n1=sample_size, n2=sample_size,
+        sample,
+        "(n1 n2) 1 h w -> (n1 h) (n2 w)",
+        n1=sample_size,
+        n2=sample_size,
     )
     plt.imshow(sample, cmap="Greys")
     plt.axis("off")

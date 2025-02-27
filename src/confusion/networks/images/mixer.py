@@ -1,7 +1,11 @@
-import einops, jax
+from typing import Tuple
+
+import einops
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
+from jaxtyping import Array, Key
 
 
 class MixerBlock(eqx.Module):
@@ -11,7 +15,13 @@ class MixerBlock(eqx.Module):
     norm2: eqx.nn.LayerNorm
 
     def __init__(
-        self, num_patches, hidden_size, mix_patch_size, mix_hidden_size, *, key
+        self,
+        num_patches: int,
+        hidden_size: int,
+        mix_patch_size: int,
+        mix_hidden_size: int,
+        *,
+        key: Key,
     ):
         tkey, ckey = jr.split(key, 2)
         self.patch_mixer = eqx.nn.MLP(
@@ -23,7 +33,7 @@ class MixerBlock(eqx.Module):
         self.norm1 = eqx.nn.LayerNorm((hidden_size, num_patches))
         self.norm2 = eqx.nn.LayerNorm((num_patches, hidden_size))
 
-    def __call__(self, y):
+    def __call__(self, y: Array) -> Array:
         y = y + jax.vmap(self.patch_mixer)(self.norm1(y))
         y = einops.rearrange(y, "c p -> p c")
         y = y + jax.vmap(self.hidden_mixer)(self.norm2(y))
@@ -40,16 +50,16 @@ class Mixer(eqx.Module):
 
     def __init__(
         self,
-        img_size,
-        patch_size,
-        hidden_size,
-        mix_patch_size,
-        mix_hidden_size,
-        num_blocks,
-        t1,
+        img_size: Tuple[int, int, int],
+        patch_size: int,
+        hidden_size: int,
+        mix_patch_size: int,
+        mix_hidden_size: int,
+        num_blocks: int,
+        t1: float,
         *,
-        key,
-        is_conditional=True,
+        key: Key,
+        is_conditional: bool = True,
     ):
         input_size, height, width = img_size
         assert (height % patch_size) == 0
@@ -77,7 +87,9 @@ class Mixer(eqx.Module):
         self.norm = eqx.nn.LayerNorm((hidden_size, num_patches))
         self.t1 = t1
 
-    def __call__(self, y, t, c, *, key=None):
+    def __call__(
+        self, y: Array, t: Array, c: Array | None, *, key: Key | None = None
+    ) -> Array:
         t = jnp.array(t / self.t1)
         _, height, width = y.shape
         t = einops.repeat(t, "-> 1 h w", h=height, w=width)

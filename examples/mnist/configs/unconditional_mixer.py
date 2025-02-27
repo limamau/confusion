@@ -1,6 +1,9 @@
-import ml_collections, optax, os
+import os
+
 import jax.numpy as jnp
 import jax.random as jr
+import ml_collections
+import optax
 
 from confusion.networks.images import Mixer
 
@@ -37,9 +40,7 @@ def get_config(imgs_shape):
     # noise parameterisations
     config.int_beta = lambda t: t
     # (just chosen to upweight the region near t=0)
-    config.weight = lambda t: 1 - jnp.exp(
-        -config.int_beta(t)
-    )
+    config.weight = lambda t: 1 - jnp.exp(-config.int_beta(t))
 
     # optimization
     config.num_steps = 1_000_000
@@ -53,7 +54,7 @@ def get_config(imgs_shape):
     config.save_every = 100_000
     config.saving_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
-        f"../checkpoints/{config.experiment_name}"
+        f"../checkpoints/{config.experiment_name}",
     )
 
     # sampling

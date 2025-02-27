@@ -1,6 +1,10 @@
-import os, shutil
+import os
+import shutil
+from typing import Tuple
+
 import equinox as eqx
 import orbax.checkpoint as ocp
+from optax import OptState
 
 
 class Checkpointer:
@@ -24,10 +28,17 @@ class Checkpointer:
             save_interval_steps=save_every,
         )
         self.mngr = ocp.CheckpointManager(
-            saving_path, options=options, item_names=('network', 'opt_state'),
+            saving_path,
+            options=options,
+            item_names=("network", "opt_state"),
         )
 
-    def restore(self, abstract_network, abstract_opt_state, step=None):
+    def restore(
+        self,
+        abstract_network: eqx.Module,
+        abstract_opt_state: OptState,
+        step: int | None = None,
+    ) -> Tuple[eqx.Module, OptState]:
         # restore latest if step is not given
         if step is None:
             step = self.mngr.latest_step()
@@ -44,26 +55,30 @@ class Checkpointer:
         restored = self.mngr.restore(
             step,
             args=ocp.args.Composite(
-                network=ocp.args.StandardRestore(saveable_network),
-                opt_state=ocp.args.StandardRestore(saveable_opt_state),
+                **{
+                    "network": ocp.args.StandardRestore(saveable_network),  # pyright: ignore
+                    "opt_state": ocp.args.StandardRestore(saveable_opt_state),  # pyright: ignore
+                }
             ),
         )
 
         # combine
-        network = eqx.combine(restored.network, static_network)
-        opt_state = eqx.combine(restored.opt_state, static_opt_state)
+        network = eqx.combine(restored["network"], static_network)
+        opt_state = eqx.combine(restored["opt_state"], static_opt_state)
 
         return network, opt_state
 
-    def save(self, step, network, opt_state):
+    def save(self, step: int, network: eqx.Module, opt_state: OptState) -> None:
         self.mngr.save(
             step,
             args=ocp.args.Composite(
-                network=ocp.args.StandardSave(
-                    eqx.filter(network, eqx.is_inexact_array)
-                ),
-                opt_state=ocp.args.StandardSave(
-                    eqx.filter(opt_state, eqx.is_inexact_array)
-                ),
+                **{
+                    "network": ocp.args.StandardSave(
+                        eqx.filter(network, eqx.is_inexact_array)  # pyright: ignore
+                    ),
+                    "opt_state": ocp.args.StandardSave(
+                        eqx.filter(opt_state, eqx.is_inexact_array)  # pyright: ignore
+                    ),
+                }
             ),
         )

@@ -1,24 +1,41 @@
-import jax, math
+import math
+from collections.abc import Callable
+from typing import List, Optional, Tuple, Union
+
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
-from collections.abc import Callable
 from einops import rearrange
-from typing import Optional, Union
+from jaxtyping import Array, Key
 
 
 class SinusoidalPosEmb(eqx.Module):
     emb: jax.Array
 
-    def __init__(self, dim):
+    def __init__(self, dim: int):
         half_dim = dim // 2
         emb = math.log(10000) / (half_dim - 1)
         self.emb = jnp.exp(jnp.arange(half_dim) * -emb)
 
-    def __call__(self, x):
+    def __call__(self, x: Array) -> Array:
         emb = x * self.emb
         emb = jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)
         return emb
+
+
+# TODO: check if this implementation is correct
+class FourierFeatureEmb(eqx.Module):
+    projection: jax.Array
+
+    def __init__(
+        self, input_dim: int, mapping_dim: int, scale: float = 10.0, *, key: Key
+    ):
+        self.projection = jax.random.normal(key, (input_dim, mapping_dim)) * scale
+
+    def __call__(self, x: Array) -> Array:
+        projection = jnp.dot(x, self.projection)
+        return jnp.concatenate([jnp.sin(projection), jnp.cos(projection)], axis=-1)
 
 
 class LinearTimeSelfAttention(eqx.Module):
@@ -29,10 +46,10 @@ class LinearTimeSelfAttention(eqx.Module):
 
     def __init__(
         self,
-        dim,
-        key,
-        heads=4,
-        dim_head=32,
+        dim: int,
+        key: Key,
+        heads: int = 4,
+        dim_head: int = 32,
     ):
         keys = jax.random.split(key, 2)
         self.group_norm = eqx.nn.GroupNorm(min(dim // 4, 32), dim)
@@ -41,7 +58,7 @@ class LinearTimeSelfAttention(eqx.Module):
         self.to_qkv = eqx.nn.Conv2d(dim, hidden_dim * 3, 1, key=keys[0])
         self.to_out = eqx.nn.Conv2d(hidden_dim, dim, 1, key=keys[1])
 
-    def __call__(self, x):
+    def __call__(self, x: Array) -> Array:
         c, h, w = x.shape
         x = self.group_norm(x)
         qkv = self.to_qkv(x)
@@ -57,14 +74,14 @@ class LinearTimeSelfAttention(eqx.Module):
         return self.to_out(out)
 
 
-def upsample_2d(y, factor=2):
+def upsample_2d(y: Array, factor: int = 2) -> Array:
     C, H, W = y.shape
     y = jnp.reshape(y, [C, H, 1, W, 1])
     y = jnp.tile(y, [1, 1, factor, 1, factor])
     return jnp.reshape(y, [C, H * factor, W * factor])
 
 
-def downsample_2d(y, factor=2):
+def downsample_2d(y: Array, factor: int = 2) -> Array:
     C, H, W = y.shape
     y = jnp.reshape(y, [C, H // factor, factor, W // factor, factor])
     return jnp.mean(y, axis=[2, 4])
@@ -77,11 +94,12 @@ def exact_zip(*args):
     return zip(*args)
 
 
-def key_split_allowing_none(key):
+def key_split_allowing_none(key: Key | None) -> Tuple[Key | None, Key | None]:
     if key is None:
         return key, None
     else:
-        return jr.split(key)
+        k1, k2 = jr.split(key)
+        return k1, k2
 
 
 class Residual(eqx.Module):
@@ -90,7 +108,7 @@ class Residual(eqx.Module):
     def __init__(self, fn):
         self.fn = fn
 
-    def __call__(self, x, *args, **kwargs):
+    def __call__(self, x: Array, *args, **kwargs) -> Array:
         return self.fn(x, *args, **kwargs) + x
 
 
@@ -101,12 +119,12 @@ class ResnetBlock(eqx.Module):
     down: bool
     dropout_rate: float
     time_emb_dim: int
-    t_mlp_layers: list[Union[Callable, eqx.nn.Linear]]
-    c_mlp_layers: list[Union[Callable, eqx.nn.Linear]]
+    t_mlp_layers: List[Union[Callable, eqx.nn.Linear]]
+    c_mlp_layers: List[Union[Callable, eqx.nn.Linear]]
     scaling: Union[None, Callable, eqx.nn.ConvTranspose2d, eqx.nn.Conv2d]
     block1_groupnorm: eqx.nn.GroupNorm
     block1_conv: eqx.nn.Conv2d
-    block2_layers: list[
+    block2_layers: List[
         Union[eqx.nn.GroupNorm, eqx.nn.Dropout, eqx.nn.Conv2d, Callable]
     ]
     res_conv: eqx.nn.Conv2d
@@ -114,20 +132,20 @@ class ResnetBlock(eqx.Module):
 
     def __init__(
         self,
-        dim_in,
-        dim_out,
-        is_biggan,
-        up,
-        down,
-        time_emb_dim,
-        cond_emb_dim,
-        dropout_rate,
-        is_attn,
-        heads,
-        dim_head,
+        dim_in: int,
+        dim_out: int,
+        is_biggan: bool,
+        up: bool,
+        down: bool,
+        time_emb_dim: int,
+        cond_emb_dim: int,
+        dropout_rate: float,
+        is_attn: bool,
+        heads: int,
+        dim_head: int,
         *,
-        key,
-        is_conditional=True,
+        key: Key,
+        is_conditional: bool = True,
     ):
         keys = jax.random.split(key, 7)
         self.dim_out = dim_out
@@ -141,7 +159,7 @@ class ResnetBlock(eqx.Module):
             jax.nn.silu,
             eqx.nn.Linear(time_emb_dim, dim_out, key=keys[0]),
         ]
-        
+
         if is_conditional:
             self.c_mlp_layers = [
                 jax.nn.silu,
@@ -149,7 +167,7 @@ class ResnetBlock(eqx.Module):
             ]
         else:
             self.c_mlp_layers = []
-        
+
         self.block1_groupnorm = eqx.nn.GroupNorm(min(dim_in // 4, 32), dim_in)
         self.block1_conv = eqx.nn.Conv2d(dim_in, dim_out, 3, padding=1, key=keys[1])
         self.block2_layers = [
@@ -205,7 +223,7 @@ class ResnetBlock(eqx.Module):
         else:
             self.attn = None
 
-    def __call__(self, x, t, c, *, key):
+    def __call__(self, x: Array, t: Array, c: Array | None, *, key: Key) -> Array:
         C, _, _ = x.shape
         # In DDPM, each set of resblocks ends with an up/down sampling. In
         # biggan there is a final resblock after the up/downsampling. In this
@@ -225,7 +243,7 @@ class ResnetBlock(eqx.Module):
             for layer in self.c_mlp_layers:
                 c = layer(c)
             h += c[..., None, None]
-        
+
         for layer in self.block2_layers:
             # precisely 1 dropout layer in block2_layers which requires a key
             if isinstance(layer, eqx.nn.Dropout):
@@ -248,28 +266,28 @@ class ResnetBlock(eqx.Module):
 class UNet(eqx.Module):
     time_pos_emb: SinusoidalPosEmb
     t_mlp: eqx.nn.MLP
-    c_mlp: eqx.nn.MLP
+    c_mlp: eqx.nn.MLP | None
     first_conv: eqx.nn.Conv2d
-    down_res_blocks: list[list[ResnetBlock]]
+    down_res_blocks: List[List[ResnetBlock]]
     mid_block1: ResnetBlock
     mid_block2: ResnetBlock
-    ups_res_blocks: list[list[ResnetBlock]]
-    final_conv_layers: list[Union[Callable, eqx.nn.LayerNorm, eqx.nn.Conv2d]]
+    ups_res_blocks: List[List[ResnetBlock]]
+    final_conv_layers: List[Union[Callable, eqx.nn.LayerNorm, eqx.nn.Conv2d]]
 
     def __init__(
         self,
-        data_shape: tuple[int, int, int],
+        data_shape: Tuple[int, int, int],
         is_biggan: bool,
-        dim_mults: list[int],
+        dim_mults: List[int],
         hidden_size: int,
         heads: int,
         dim_head: int,
         dropout_rate: float,
         num_res_blocks: int,
-        attn_resolutions: list[int],
+        attn_resolutions: List[int],
         *,
-        key,
-        is_conditional=True,
+        key: Key,
+        is_conditional: bool = True,
     ):
         keys = jax.random.split(key, 8)
         del key
@@ -289,7 +307,7 @@ class UNet(eqx.Module):
             activation=jax.nn.silu,
             key=keys[0],
         )
-        
+
         # setup conditional handling (no positional encoding here)
         if is_conditional:
             self.c_mlp = eqx.nn.MLP(
@@ -302,14 +320,14 @@ class UNet(eqx.Module):
             )
         else:
             self.c_mlp = None
-        
+
         # lifting layer
         self.first_conv = eqx.nn.Conv2d(
             data_channels, hidden_size, kernel_size=3, padding=1, key=keys[2]
         )
 
         h, w = in_height, in_width
-        
+
         # setup resnet blocks for downsampling
         self.down_res_blocks = []
         num_keys = len(in_out) * num_res_blocks - 1
@@ -492,10 +510,11 @@ class UNet(eqx.Module):
             eqx.nn.Conv2d(hidden_size, data_channels, 1, key=keys[7]),
         ]
 
-    def __call__(self, y, t, c, *, key=None):
+    def __call__(self, y: Array, t: Array, c: Array | None, *, key=None) -> Array:
         t = self.time_pos_emb(t)
         t = self.t_mlp(t)
         if c is not None:
+            assert self.c_mlp is not None
             c = self.time_pos_emb(c)
             c = self.c_mlp(c)
         h = self.first_conv(y)
@@ -517,11 +536,13 @@ class UNet(eqx.Module):
                 if res_block.up:
                     h = res_block(h, t, c, key=subkey)
                 else:
-                    h = res_block(jnp.concatenate((h, hs.pop()), axis=0), t, c, key=subkey)
+                    h = res_block(
+                        jnp.concatenate((h, hs.pop()), axis=0), t, c, key=subkey
+                    )
 
         assert len(hs) == 0
 
         for layer in self.final_conv_layers:
             h = layer(h)
-        
+
         return h

@@ -1,58 +1,20 @@
-import jax
-import equinox as eqx
 import functools as ft
+from typing import Callable, Iterator, Tuple
+
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
+from jaxtyping import Array, Key
+from optax import GradientTransformation, OptState
 
-
-# training function #
-def train(
-    num_steps,
-    data,
-    batch_size,
-    network,
-    weight,
-    int_beta,
-    t1,
-    opt,
-    print_every,
-    ckpter,
-    key,
-    conds=None,
-):
-    # optax will update the floating-point JAX arrays in the model
-    opt_state = opt.init(eqx.filter(network, eqx.is_inexact_array))
-    
-    # prep for training
-    train_key, loader_key = jr.split(key)
-    total_value = 0
-    total_size = 0
-    
-    # training loop
-    for step, (data, conds) in zip(
-        range(num_steps), 
-        dataloader(data, conds, batch_size, key=loader_key)
-    ):
-        value, network, train_key, opt_state = make_step(
-            network, weight, int_beta, data, conds, t1, train_key, opt_state, opt.update
-        )
-        total_value += value.item()
-        total_size += 1
-        
-        # logging
-        if (step % print_every) == 0 or step == num_steps - 1:
-            print(f"Step={step} Loss={total_value / total_size}", flush=True)
-            total_value = 0
-            total_size = 0
-        
-        # checkpointing
-        if step % ckpter.save_every == 0 or step == num_steps - 1:
-            ckpter.save(step, network, opt_state)
-    ckpter.mngr.wait_until_finished()
+from .checkpointing import Checkpointer
 
 
 # auxiliary functions #
-def dataloader(data, conds, batch_size, *, key):
+def dataloader(
+    data: Array, conds: Array | None, batch_size: int, *, key: Key
+) -> Iterator[Tuple[Array, Array | None]]:
     dataset_size = data.shape[0]
     indices = jnp.arange(dataset_size)
     while True:
@@ -70,18 +32,36 @@ def dataloader(data, conds, batch_size, *, key):
             end = start + batch_size
 
 
-def single_loss_fn(model, weight, int_beta, data, t, c, key):
+def single_loss_fn(
+    model: eqx.Module,
+    weight: Callable,
+    int_beta: Callable,
+    data: Array,
+    t: Array,
+    c: Array | None,
+    key: Key,
+) -> Array:
     mean = data * jnp.exp(-0.5 * int_beta(t))
     var = jnp.maximum(1 - jnp.exp(-int_beta(t)), 1e-5)
     std = jnp.sqrt(var)
     noise_key, dropout_key = jr.split(key)
     noise = jr.normal(noise_key, data.shape)
     y = mean + std * noise
-    pred = model(y, t, c, key=dropout_key)
+    pred = model(
+        y, t, c, key=dropout_key
+    )  # TODO: to be corrected when the class for diffusion models will be created
     return weight(t) * jnp.mean((pred + noise / std) ** 2)
 
 
-def batch_loss_fn(model, weight, int_beta, data, conds, t1, key):
+def batch_loss_fn(
+    model: eqx.Module,
+    weight: Callable,
+    int_beta: Callable,
+    data: Array,
+    conds: Array | None,
+    t1: float,
+    key: Key,
+) -> Array:
     batch_size = data.shape[0]
     tkey, losskey = jr.split(key)
     losskey = jr.split(losskey, batch_size)
@@ -94,10 +74,65 @@ def batch_loss_fn(model, weight, int_beta, data, conds, t1, key):
 
 
 @eqx.filter_jit
-def make_step(model, weight, int_beta, data, conds, t1, key, opt_state, opt_update):
+def make_step(
+    model: eqx.Module,
+    weight: Callable,
+    int_beta: Callable,
+    data: Array,
+    conds: Array | None,
+    t1: float,
+    key: Key,
+    opt_state: OptState,
+    opt_update: Callable,
+) -> Tuple[Array, eqx.Module, Key, OptState]:
     loss_fn = eqx.filter_value_and_grad(batch_loss_fn)
     loss, grads = loss_fn(model, weight, int_beta, data, conds, t1, key)
     updates, opt_state = opt_update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
     key = jr.split(key, 1)[0]
     return loss, model, key, opt_state
+
+
+# training function #
+def train(
+    num_steps: int,
+    data: Array,
+    batch_size: int,
+    network: eqx.Module,
+    weight: Callable,
+    int_beta: Callable,
+    t1: float,
+    opt: GradientTransformation,
+    print_every: int,
+    ckpter: Checkpointer,
+    key: Key,
+    conds: Array | None = None,
+):
+    # optax will update the floating-point JAX arrays in the model
+    opt_state = opt.init(eqx.filter(network, eqx.is_inexact_array))
+
+    # prep for training
+    train_key, loader_key = jr.split(key)
+    total_value = 0
+    total_size = 0
+
+    # training loop
+    for step, (data, conds) in zip(
+        range(num_steps), dataloader(data, conds, batch_size, key=loader_key)
+    ):
+        value, network, train_key, opt_state = make_step(
+            network, weight, int_beta, data, conds, t1, train_key, opt_state, opt.update
+        )
+        total_value += value.item()
+        total_size += 1
+
+        # logging
+        if (step % print_every) == 0 or step == num_steps - 1:
+            print(f"Step={step} Loss={total_value / total_size}", flush=True)
+            total_value = 0
+            total_size = 0
+
+        # checkpointing
+        if step % ckpter.save_every == 0 or step == num_steps - 1:
+            ckpter.save(step, network, opt_state)
+    ckpter.mngr.wait_until_finished()

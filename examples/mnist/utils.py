@@ -1,5 +1,9 @@
-import array, gzip, os, struct
+import array
+import gzip
+import os
+import struct
 import urllib.request
+
 import jax.numpy as jnp
 
 
@@ -11,7 +15,7 @@ def load_mnist():
     url = "https://storage.googleapis.com/cvdf-datasets/mnist"
     image_filename = "train-images-idx3-ubyte.gz"
     label_filename = "train-labels-idx1-ubyte.gz"
-    
+
     if not os.path.exists(data_dir):
         os.makedirs(data_dir, exist_ok=True)
 
@@ -43,7 +47,9 @@ def load_mnist():
         if magic_number != 2049:
             raise ValueError(f"Invalid magic number in label file: {magic_number}")
         if num_images != num_labels:
-            raise ValueError(f"Number of images ({num_images}) does not match number of labels ({num_labels})")
+            raise ValueError(
+                f"Number of images ({num_images}) does not match number of labels ({num_labels})"
+            )
         labels = jnp.array(array.array("B", fh.read()), dtype=jnp.uint8)
 
     return images, labels

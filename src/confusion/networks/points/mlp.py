@@ -1,13 +1,16 @@
-import jax
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
+from jaxtyping import Array, Key
 
 
 class FourierTimeEmbedding(eqx.Module):
-    def __call__(self, t):
+    def __call__(self, t: Array) -> Array:
         t = jnp.expand_dims(t, axis=-1)
-        return jnp.concatenate([jnp.cos(2*jnp.pi*t), jnp.sin(2*jnp.pi*t)], axis=-1)
+        return jnp.concatenate(
+            [jnp.cos(2 * jnp.pi * t), jnp.sin(2 * jnp.pi * t)], axis=-1
+        )
 
 
 class MLP(eqx.Module):
@@ -20,11 +23,11 @@ class MLP(eqx.Module):
 
     def __init__(
         self,
-        num_variables,
-        hidden_size,
-        t1,
+        num_variables: int,
+        hidden_size: int,
+        t1: float,
         *,
-        key,
+        key: Key,
         is_conditional=True,
     ):
         keys = jr.split(key, 5)
@@ -41,7 +44,7 @@ class MLP(eqx.Module):
         self.hidden_linear3 = eqx.nn.Linear(hidden_size, hidden_size, key=keys[3])
         self.out_linear = eqx.nn.Linear(hidden_size, num_variables, key=keys[4])
 
-    def __call__(self, y, t, c, *, key=None):
+    def __call__(self, y: Array, t: Array, c: Array | None, *, key=None) -> Array:
         # time embedding (Fourier)
         t = self.temb(t)
 
