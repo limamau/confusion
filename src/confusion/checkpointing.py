@@ -6,6 +6,9 @@ import equinox as eqx
 import orbax.checkpoint as ocp
 from optax import OptState
 
+from .diffusion import AbstractDiffusionModel
+from .networks import AbstractNetwork
+
 
 class Checkpointer:
     def __init__(
@@ -33,19 +36,21 @@ class Checkpointer:
             item_names=("network", "opt_state"),
         )
 
+    # here the AbstractDiffusionModel class is pass as argument
+    # and is also returned (different than save method)
     def restore(
         self,
-        abstract_network: eqx.Module,
+        model: AbstractDiffusionModel,
         abstract_opt_state: OptState,
         step: int | None = None,
-    ) -> Tuple[eqx.Module, OptState]:
+    ) -> Tuple[AbstractDiffusionModel, OptState]:
         # restore latest if step is not given
         if step is None:
             step = self.mngr.latest_step()
 
         # partition
         saveable_network, static_network = eqx.partition(
-            abstract_network, eqx.is_inexact_array
+            model.network, eqx.is_inexact_array
         )
         saveable_opt_state, static_opt_state = eqx.partition(
             abstract_opt_state, eqx.is_inexact_array
@@ -65,10 +70,13 @@ class Checkpointer:
         # combine
         network = eqx.combine(restored["network"], static_network)
         opt_state = eqx.combine(restored["opt_state"], static_opt_state)
+        model = eqx.tree_at(lambda m: m.network, model, network)
 
-        return network, opt_state
+        return model, opt_state
 
-    def save(self, step: int, network: eqx.Module, opt_state: OptState) -> None:
+    # here the AbstractNetwork class is pass as argument
+    # and is also returned (different than restore method)
+    def save(self, step: int, network: AbstractNetwork, opt_state: OptState) -> None:
         self.mngr.save(
             step,
             args=ocp.args.Composite(

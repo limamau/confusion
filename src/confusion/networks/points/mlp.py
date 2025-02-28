@@ -4,6 +4,8 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
+from ..network import AbstractNetwork
+
 
 class FourierTimeEmbedding(eqx.Module):
     def __call__(self, t: Array) -> Array:
@@ -13,7 +15,7 @@ class FourierTimeEmbedding(eqx.Module):
         )
 
 
-class MLP(eqx.Module):
+class MLP(AbstractNetwork):
     temb: FourierTimeEmbedding
     in_linear: eqx.nn.Linear
     hidden_linear1: eqx.nn.Linear

@@ -7,6 +7,8 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
+from ..network import AbstractNetwork
+
 
 class MixerBlock(eqx.Module):
     patch_mixer: eqx.nn.MLP
@@ -33,15 +35,15 @@ class MixerBlock(eqx.Module):
         self.norm1 = eqx.nn.LayerNorm((hidden_size, num_patches))
         self.norm2 = eqx.nn.LayerNorm((num_patches, hidden_size))
 
-    def __call__(self, y: Array) -> Array:
-        y = y + jax.vmap(self.patch_mixer)(self.norm1(y))
-        y = einops.rearrange(y, "c p -> p c")
-        y = y + jax.vmap(self.hidden_mixer)(self.norm2(y))
-        y = einops.rearrange(y, "p c -> c p")
-        return y
+    def __call__(self, x: Array) -> Array:
+        x = x + jax.vmap(self.patch_mixer)(self.norm1(x))
+        x = einops.rearrange(x, "c p -> p c")
+        x = x + jax.vmap(self.hidden_mixer)(self.norm2(x))
+        x = einops.rearrange(x, "p c -> c p")
+        return x
 
 
-class Mixer(eqx.Module):
+class Mixer(AbstractNetwork):
     conv_in: eqx.nn.Conv2d
     conv_out: eqx.nn.ConvTranspose2d
     blocks: list
@@ -88,23 +90,23 @@ class Mixer(eqx.Module):
         self.t1 = t1
 
     def __call__(
-        self, y: Array, t: Array, c: Array | None, *, key: Key | None = None
+        self, x: Array, t: Array, c: Array | None, *, key: Key | None = None
     ) -> Array:
         t = jnp.array(t / self.t1)
-        _, height, width = y.shape
+        _, height, width = x.shape
         t = einops.repeat(t, "-> 1 h w", h=height, w=width)
 
         if c is not None:
             c = einops.repeat(c, "-> 1 h w", h=height, w=width)
-            y = jnp.concatenate([y, t, c])
+            x = jnp.concatenate([x, t, c])
         else:
-            y = jnp.concatenate([y, t])
+            x = jnp.concatenate([x, t])
 
-        y = self.conv_in(y)
-        _, patch_height, patch_width = y.shape
-        y = einops.rearrange(y, "c h w -> c (h w)")
+        x = self.conv_in(x)
+        _, patch_height, patch_width = x.shape
+        x = einops.rearrange(x, "c h w -> c (h w)")
         for block in self.blocks:
-            y = block(y)
-        y = self.norm(y)
-        y = einops.rearrange(y, "c (h w) -> c h w", h=patch_height, w=patch_width)
-        return self.conv_out(y)
+            x = block(x)
+        x = self.norm(x)
+        x = einops.rearrange(x, "c (h w) -> c h w", h=patch_height, w=patch_width)
+        return self.conv_out(x)

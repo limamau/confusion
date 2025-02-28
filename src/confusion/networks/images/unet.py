@@ -9,6 +9,8 @@ import jax.random as jr
 from einops import rearrange
 from jaxtyping import Array, Key
 
+from ..network import AbstractNetwork
+
 
 class SinusoidalPosEmb(eqx.Module):
     emb: jax.Array
@@ -74,17 +76,17 @@ class LinearTimeSelfAttention(eqx.Module):
         return self.to_out(out)
 
 
-def upsample_2d(y: Array, factor: int = 2) -> Array:
-    C, H, W = y.shape
-    y = jnp.reshape(y, [C, H, 1, W, 1])
-    y = jnp.tile(y, [1, 1, factor, 1, factor])
-    return jnp.reshape(y, [C, H * factor, W * factor])
+def upsample_2d(x: Array, factor: int = 2) -> Array:
+    C, H, W = x.shape
+    x = jnp.reshape(x, [C, H, 1, W, 1])
+    x = jnp.tile(x, [1, 1, factor, 1, factor])
+    return jnp.reshape(x, [C, H * factor, W * factor])
 
 
-def downsample_2d(y: Array, factor: int = 2) -> Array:
-    C, H, W = y.shape
-    y = jnp.reshape(y, [C, H // factor, factor, W // factor, factor])
-    return jnp.mean(y, axis=[2, 4])
+def downsample_2d(x: Array, factor: int = 2) -> Array:
+    C, H, W = x.shape
+    x = jnp.reshape(x, [C, H // factor, factor, W // factor, factor])
+    return jnp.mean(x, axis=[2, 4])
 
 
 def exact_zip(*args):
@@ -263,7 +265,7 @@ class ResnetBlock(eqx.Module):
         return out
 
 
-class UNet(eqx.Module):
+class UNet(AbstractNetwork):
     time_pos_emb: SinusoidalPosEmb
     t_mlp: eqx.nn.MLP
     c_mlp: eqx.nn.MLP | None
@@ -510,14 +512,14 @@ class UNet(eqx.Module):
             eqx.nn.Conv2d(hidden_size, data_channels, 1, key=keys[7]),
         ]
 
-    def __call__(self, y: Array, t: Array, c: Array | None, *, key=None) -> Array:
+    def __call__(self, x: Array, t: Array, c: Array | None, *, key=None) -> Array:
         t = self.time_pos_emb(t)
         t = self.t_mlp(t)
         if c is not None:
             assert self.c_mlp is not None
             c = self.time_pos_emb(c)
             c = self.c_mlp(c)
-        h = self.first_conv(y)
+        h = self.first_conv(x)
         hs = [h]
         for res_blocks in self.down_res_blocks:
             for res_block in res_blocks:

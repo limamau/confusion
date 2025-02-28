@@ -1,4 +1,5 @@
 import functools as ft
+import time
 from typing import Callable, Iterator, Tuple
 
 import equinox as eqx
@@ -9,6 +10,8 @@ from jaxtyping import Array, Key
 from optax import GradientTransformation, OptState
 
 from .checkpointing import Checkpointer
+from .diffusion import AbstractDiffusionModel
+from .networks import AbstractNetwork
 
 
 # auxiliary functions #
@@ -33,30 +36,22 @@ def dataloader(
 
 
 def single_loss_fn(
-    model: eqx.Module,
-    weight: Callable,
-    int_beta: Callable,
-    data: Array,
+    network: AbstractNetwork,
+    model: AbstractDiffusionModel,
+    x0: Array,
     t: Array,
     c: Array | None,
     key: Key,
 ) -> Array:
-    mean = data * jnp.exp(-0.5 * int_beta(t))
-    var = jnp.maximum(1 - jnp.exp(-int_beta(t)), 1e-5)
-    std = jnp.sqrt(var)
     noise_key, dropout_key = jr.split(key)
-    noise = jr.normal(noise_key, data.shape)
-    y = mean + std * noise
-    pred = model(
-        y, t, c, key=dropout_key
-    )  # TODO: to be corrected when the class for diffusion models will be created
-    return weight(t) * jnp.mean((pred + noise / std) ** 2)
+    x, noise, std = model.perturbation(x0, t, key=noise_key)
+    pred = network(x, t, c, key=dropout_key)
+    return model.weights(t) * jnp.mean((pred + noise / std) ** 2)
 
 
 def batch_loss_fn(
-    model: eqx.Module,
-    weight: Callable,
-    int_beta: Callable,
+    network: AbstractNetwork,
+    model: AbstractDiffusionModel,
     data: Array,
     conds: Array | None,
     t1: float,
@@ -68,47 +63,45 @@ def batch_loss_fn(
     # low-discrepancy sampling over t to reduce variance
     t = jr.uniform(tkey, (batch_size,), minval=0, maxval=t1 / batch_size)
     t = t + (t1 / batch_size) * jnp.arange(batch_size)
-    loss_fn = ft.partial(single_loss_fn, model, weight, int_beta)
+    loss_fn = ft.partial(single_loss_fn, network, model)
     loss_fn = jax.vmap(loss_fn)
     return jnp.mean(loss_fn(data, t, conds, losskey))
 
 
 @eqx.filter_jit
 def make_step(
-    model: eqx.Module,
-    weight: Callable,
-    int_beta: Callable,
+    network: AbstractNetwork,
+    model: AbstractDiffusionModel,
     data: Array,
     conds: Array | None,
     t1: float,
     key: Key,
     opt_state: OptState,
     opt_update: Callable,
-) -> Tuple[Array, eqx.Module, Key, OptState]:
+) -> Tuple[Array, AbstractNetwork, Key, OptState]:
     loss_fn = eqx.filter_value_and_grad(batch_loss_fn)
-    loss, grads = loss_fn(model, weight, int_beta, data, conds, t1, key)
+    loss, grads = loss_fn(network, model, data, conds, t1, key)
     updates, opt_state = opt_update(grads, opt_state)
-    model = eqx.apply_updates(model, updates)
+    network = eqx.apply_updates(network, updates)
     key = jr.split(key, 1)[0]
-    return loss, model, key, opt_state
+    return loss, network, key, opt_state
 
 
 # training function #
 def train(
-    num_steps: int,
-    data: Array,
-    batch_size: int,
-    network: eqx.Module,
-    weight: Callable,
-    int_beta: Callable,
-    t1: float,
+    model: AbstractDiffusionModel,
     opt: GradientTransformation,
+    data: Array,
+    num_steps: int,
+    batch_size: int,
+    t1: float,
     print_every: int,
     ckpter: Checkpointer,
     key: Key,
     conds: Array | None = None,
 ):
-    # optax will update the floating-point JAX arrays in the model
+    # optax will update the floating-point JAX arrays in the network
+    network = model.network
     opt_state = opt.init(eqx.filter(network, eqx.is_inexact_array))
 
     # prep for training
@@ -116,19 +109,26 @@ def train(
     total_value = 0
     total_size = 0
 
-    # training loop
+    # let's go!
+    start_time = time.time()
     for step, (data, conds) in zip(
         range(num_steps), dataloader(data, conds, batch_size, key=loader_key)
     ):
         value, network, train_key, opt_state = make_step(
-            network, weight, int_beta, data, conds, t1, train_key, opt_state, opt.update
+            network, model, data, conds, t1, train_key, opt_state, opt.update
         )
         total_value += value.item()
         total_size += 1
 
         # logging
         if (step % print_every) == 0 or step == num_steps - 1:
-            print(f"Step={step} Loss={total_value / total_size}", flush=True)
+            elapsed_time = time.time() - start_time
+            print(
+                f"Step: {step}, "
+                + f"Loss: {total_value / total_size}, "
+                + f"Elapsed time: {elapsed_time:.2f}s",
+                flush=True,
+            )
             total_value = 0
             total_size = 0
 
