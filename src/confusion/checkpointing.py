@@ -4,7 +4,7 @@ from typing import Tuple
 
 import equinox as eqx
 import orbax.checkpoint as ocp
-from optax import OptState
+from optax import GradientTransformation, OptState
 
 from .diffusion import AbstractDiffusionModel
 
@@ -37,8 +37,8 @@ class Checkpointer:
 
     def restore(
         self,
-        model: AbstractDiffusionModel,
-        abstract_opt_state: OptState,
+        abstract_model: AbstractDiffusionModel,
+        opt: GradientTransformation,
         step: int | None = None,
     ) -> Tuple[AbstractDiffusionModel, OptState]:
         # restore latest if step is not given
@@ -46,10 +46,10 @@ class Checkpointer:
             step = self.mngr.latest_step()
 
         # partition
-        saveable_model, static_model = eqx.partition(model, eqx.is_inexact_array)
-        saveable_opt_state, static_opt_state = eqx.partition(
-            abstract_opt_state, eqx.is_inexact_array
+        saveable_model, static_model = eqx.partition(
+            abstract_model, eqx.is_inexact_array
         )
+        opt_state = opt.init(eqx.filter(abstract_model, eqx.is_inexact_array))
 
         # restore
         restored = self.mngr.restore(
@@ -57,14 +57,14 @@ class Checkpointer:
             args=ocp.args.Composite(
                 **{
                     "model": ocp.args.StandardRestore(saveable_model),  # pyright: ignore
-                    "opt_state": ocp.args.StandardRestore(saveable_opt_state),  # pyright: ignore
+                    "opt_state": ocp.args.StandardRestore(opt_state),  # pyright: ignore
                 }
             ),
         )
 
         # combine
         model = eqx.combine(restored["model"], static_model)
-        opt_state = eqx.combine(restored["opt_state"], static_opt_state)
+        opt_state = restored["opt_state"]
 
         return model, opt_state
 
