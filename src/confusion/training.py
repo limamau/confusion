@@ -11,7 +11,6 @@ from optax import GradientTransformation, OptState
 
 from .checkpointing import Checkpointer
 from .diffusion import AbstractDiffusionModel
-from .networks import AbstractNetwork
 
 
 # auxiliary functions #
@@ -36,7 +35,6 @@ def dataloader(
 
 
 def single_loss_fn(
-    network: AbstractNetwork,
     model: AbstractDiffusionModel,
     x0: Array,
     t: Array,
@@ -45,12 +43,11 @@ def single_loss_fn(
 ) -> Array:
     noise_key, dropout_key = jr.split(key)
     x, noise, std = model.perturbation(x0, t, key=noise_key)
-    pred = network(x, t, c, key=dropout_key)
+    pred = model.score(x, t, c, key=dropout_key)
     return model.weights(t) * jnp.mean((pred + noise / std) ** 2)
 
 
 def batch_loss_fn(
-    network: AbstractNetwork,
     model: AbstractDiffusionModel,
     data: Array,
     conds: Array | None,
@@ -63,14 +60,13 @@ def batch_loss_fn(
     # low-discrepancy sampling over t to reduce variance
     t = jr.uniform(tkey, (batch_size,), minval=0, maxval=t1 / batch_size)
     t = t + (t1 / batch_size) * jnp.arange(batch_size)
-    loss_fn = ft.partial(single_loss_fn, network, model)
+    loss_fn = ft.partial(single_loss_fn, model)
     loss_fn = jax.vmap(loss_fn)
     return jnp.mean(loss_fn(data, t, conds, losskey))
 
 
 @eqx.filter_jit
 def make_step(
-    network: AbstractNetwork,
     model: AbstractDiffusionModel,
     data: Array,
     conds: Array | None,
@@ -78,13 +74,13 @@ def make_step(
     key: Key,
     opt_state: OptState,
     opt_update: Callable,
-) -> Tuple[Array, AbstractNetwork, Key, OptState]:
+) -> Tuple[Array, AbstractDiffusionModel, Key, OptState]:
     loss_fn = eqx.filter_value_and_grad(batch_loss_fn)
-    loss, grads = loss_fn(network, model, data, conds, t1, key)
+    loss, grads = loss_fn(model, data, conds, t1, key)
     updates, opt_state = opt_update(grads, opt_state)
-    network = eqx.apply_updates(network, updates)
+    model = eqx.apply_updates(model, updates)
     key = jr.split(key, 1)[0]
-    return loss, network, key, opt_state
+    return loss, model, key, opt_state
 
 
 # training function #
@@ -100,9 +96,8 @@ def train(
     key: Key,
     conds: Array | None = None,
 ):
-    # optax will update the floating-point JAX arrays in the network
-    network = model.network
-    opt_state = opt.init(eqx.filter(network, eqx.is_inexact_array))
+    # optax will update the floating-point JAX arrays in the model
+    opt_state = opt.init(eqx.filter(model, eqx.is_inexact_array))
 
     # prep for training
     train_key, loader_key = jr.split(key)
@@ -114,8 +109,8 @@ def train(
     for step, (data, conds) in zip(
         range(num_steps), dataloader(data, conds, batch_size, key=loader_key)
     ):
-        value, network, train_key, opt_state = make_step(
-            network, model, data, conds, t1, train_key, opt_state, opt.update
+        value, model, train_key, opt_state = make_step(
+            model, data, conds, t1, train_key, opt_state, opt.update
         )
         total_value += value.item()
         total_size += 1
@@ -134,5 +129,5 @@ def train(
 
         # checkpointing
         if step % ckpter.save_every == 0 or step == num_steps - 1:
-            ckpter.save(step, network, opt_state)
+            ckpter.save(step, model, opt_state)
     ckpter.mngr.wait_until_finished()
