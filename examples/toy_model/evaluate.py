@@ -145,7 +145,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         choices=[
-            "vp_mlp",
+            "ve",
+            "vp",
         ],
         required=True,
     )

@@ -26,7 +26,7 @@ class SinusoidalPosEmb(eqx.Module):
         return emb
 
 
-# TODO: check if this implementation is correct
+# limamau: check if this implementation is correct
 class FourierFeatureEmb(eqx.Module):
     projection: jax.Array
 

@@ -13,6 +13,8 @@ from .networks import AbstractNetwork
 class AbstractDiffusionModel(eqx.Module):
     network: AbstractNetwork
     weights: Callable
+    t0: float
+    t1: float
 
     @abstractmethod
     def diffusion(self, t: Array) -> Array:
@@ -30,19 +32,31 @@ class AbstractDiffusionModel(eqx.Module):
 
     @abstractmethod
     def score(
-        self, x: Array, t: Array, c: Array | None, *, key: Key | None = None
+        self,
+        x: Array,
+        t: Array,
+        c: Array | None,
+        *,
+        key: Key | None = None,
     ) -> Array:
         raise NotImplementedError
 
 
-class VPDiffusionModel(AbstractDiffusionModel):
+class VariancePreserving(AbstractDiffusionModel):
     int_beta: Callable
 
     def __init__(
-        self, network: AbstractNetwork, int_beta_fn: Callable, weights_fn: Callable
+        self,
+        network: AbstractNetwork,
+        int_beta_fn: Callable,
+        t0: float,
+        t1: float,
+        weights_fn: Callable,
     ):
         self.network = network
         self.weights = weights_fn
+        self.t0 = t0
+        self.t1 = t1
         self.int_beta = int_beta_fn
 
     def diffusion(self, t: Array) -> Array:
@@ -65,6 +79,65 @@ class VPDiffusionModel(AbstractDiffusionModel):
         return x, noise, std
 
     def score(
-        self, x: Array, t: Array, c: Array | None, *, key: Key | None = None
+        self,
+        x: Array,
+        t: Array,
+        c: Array | None,
+        *,
+        key: Key | None = None,
+    ) -> Array:
+        return self.network(x, t, c, key=key)
+
+
+class VarianceExploding(AbstractDiffusionModel):
+    sigma: Callable
+    sigma_min: float
+    sigma_max: float
+
+    def __init__(
+        self,
+        network: AbstractNetwork,
+        weights_fn: Callable,
+        t0: float,
+        t1: float,
+        sigma_min: float,
+        sigma_max: float,
+        is_approximate: bool = True,
+    ):
+        self.network = network
+        self.weights = weights_fn
+        self.t0 = t0
+        self.t1 = t1
+        self.sigma_min = sigma_min
+        self.sigma_max = sigma_max
+        if is_approximate:
+            self.sigma = lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), t)
+        else:
+            self.sigma = lambda t: sigma_min * jnp.sqrt(
+                jnp.exp(jnp.log(sigma_max / sigma_min) * t) - 1
+            )
+
+    def diffusion(self, t: Array) -> Array:
+        log_ratio = jnp.sqrt(2 * jnp.log(self.sigma_max / self.sigma_min))
+        return self.sigma(t) * log_ratio
+
+    def drift(self, x: Array, t: Array) -> Array:
+        return jnp.zeros_like(x)
+
+    def perturbation(
+        self, x0: Array, t: Array, *, key: Key
+    ) -> Tuple[Array, Array, Array]:
+        noise = jr.normal(key, x0.shape)
+        std = self.sigma(t)
+        x = x0 + std * noise
+        return x, noise, std
+
+    def score(
+        self,
+        x: Array,
+        t: Array,
+        c: Array | None,
+        *,
+        key: Key | None = None,
     ) -> Array:
         return self.network(x, t, c, key=key)

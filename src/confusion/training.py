@@ -6,6 +6,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
+from equinox import filter_jit
 from jaxtyping import Array, Key
 from optax import GradientTransformation, OptState
 
@@ -51,32 +52,30 @@ def batch_loss_fn(
     model: AbstractDiffusionModel,
     data: Array,
     conds: Array | None,
-    t1: float,
     key: Key,
 ) -> Array:
     batch_size = data.shape[0]
     tkey, losskey = jr.split(key)
     losskey = jr.split(losskey, batch_size)
-    # low-discrepancy sampling over t to reduce variance
-    t = jr.uniform(tkey, (batch_size,), minval=0, maxval=t1 / batch_size)
-    t = t + (t1 / batch_size) * jnp.arange(batch_size)
+    # low-discrepancy sampling over t to reduce variance (limamau: is this really necessary?)
+    t = jr.uniform(tkey, (batch_size,), minval=model.t0, maxval=model.t1 / batch_size)
+    t = t + (model.t1 / batch_size) * jnp.arange(batch_size)
     loss_fn = ft.partial(single_loss_fn, model)
     loss_fn = jax.vmap(loss_fn)
-    return jnp.mean(loss_fn(data, t, conds, losskey))
+    return jnp.mean(loss_fn(data, t, conds, losskey))  # pyright: ignore
 
 
-@eqx.filter_jit
+@filter_jit
 def make_step(
     model: AbstractDiffusionModel,
     data: Array,
     conds: Array | None,
-    t1: float,
     key: Key,
     opt_state: OptState,
     opt_update: Callable,
 ) -> Tuple[Array, AbstractDiffusionModel, Key, OptState]:
     loss_fn = eqx.filter_value_and_grad(batch_loss_fn)
-    loss, grads = loss_fn(model, data, conds, t1, key)
+    loss, grads = loss_fn(model, data, conds, key)
     updates, opt_state = opt_update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
     key = jr.split(key, 1)[0]
@@ -90,7 +89,6 @@ def train(
     data: Array,
     num_steps: int,
     batch_size: int,
-    t1: float,
     print_every: int,
     ckpter: Checkpointer,
     key: Key,
@@ -110,7 +108,7 @@ def train(
         range(num_steps), dataloader(data, conds, batch_size, key=loader_key)
     ):
         value, model, train_key, opt_state = make_step(
-            model, data, conds, t1, train_key, opt_state, opt.update
+            model, data, conds, train_key, opt_state, opt.update
         )
         total_value += value.item()
         total_size += 1
@@ -120,7 +118,7 @@ def train(
             elapsed_time = time.time() - start_time
             print(
                 f"Step: {step}, "
-                + f"Loss: {total_value / total_size}, "
+                + f"Loss: {total_value / total_size:.4e}, "
                 + f"Elapsed time: {elapsed_time:.2f}s",
                 flush=True,
             )

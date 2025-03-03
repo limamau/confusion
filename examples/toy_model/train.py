@@ -15,7 +15,6 @@ def main(args):
     num_samples = config.num_samples
     num_steps = config.num_steps
     batch_size = config.batch_size
-    t1 = config.t1
     model = config.model
     opt = config.opt
     print_every = config.print_every
@@ -45,7 +44,6 @@ def main(args):
         samples,
         num_steps,
         batch_size,
-        t1,
         print_every,
         ckpter,
         train_key,
@@ -60,7 +58,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         choices=[
-            "vp_mlp",
+            "ve",
+            "vp",
         ],
         required=True,
     )

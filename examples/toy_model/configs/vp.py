@@ -5,8 +5,8 @@ import jax.random as jr
 import ml_collections
 import optax
 
-from confusion.diffusion import VPDiffusionModel
-from confusion.networks import MLP
+from confusion.diffusion import VariancePreserving
+from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ODESampler
 
 
@@ -27,7 +27,7 @@ def get_config():
     config.num_variables = 3
     config.hidden_size = 256
     config.is_conditional = False
-    config.network = MLP(
+    config.network = MultiLayerPerceptron(
         config.num_variables,
         config.hidden_size,
         config.t1,
@@ -35,13 +35,18 @@ def get_config():
         is_conditional=config.is_conditional,
     )
 
-    # noise parameterisations
-    config.int_beta_fn = lambda t: t
-    config.weight_fn = lambda t: 1 - jnp.exp(-config.int_beta_fn(t))
-
     # diffusion model
-    config.model = VPDiffusionModel(
-        config.network, config.int_beta_fn, config.weight_fn
+    config.t0 = 0.0
+    config.int_beta_fn = lambda t: t
+    config.weight_fn = lambda t: 1 - jnp.exp(
+        -config.int_beta_fn(t)
+    )  # weight is taken to increase importance of noise near t=0
+    config.model = VariancePreserving(
+        config.network,
+        config.weight_fn,
+        config.t0,
+        config.t1,
+        config.int_beta_fn,
     )
 
     # optimization
@@ -61,9 +66,9 @@ def get_config():
 
     # sampling
     config.dt0 = 0.01
+    config.sampler = ODESampler(config.dt0, config.t1)
     config.sample_size = 1000
     config.conds = None
     config.do_B = 3
-    config.sampler = ODESampler(config.dt0, config.t1)
 
     return config

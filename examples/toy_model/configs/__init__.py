@@ -1,6 +1,8 @@
-from . import vp_mlp
+from . import ve, vp
 
 
 def get_config(args):
-    if args.config == "vp_mlp":
-        return vp_mlp.get_config()
+    if args.config == "ve":
+        return ve.get_config()
+    elif args.config == "vp":
+        return vp.get_config()

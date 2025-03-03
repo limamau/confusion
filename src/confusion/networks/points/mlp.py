@@ -15,7 +15,7 @@ class FourierTimeEmbedding(eqx.Module):
         )
 
 
-class MLP(AbstractNetwork):
+class MultiLayerPerceptron(AbstractNetwork):
     temb: FourierTimeEmbedding
     in_linear: eqx.nn.Linear
     hidden_linear1: eqx.nn.Linear

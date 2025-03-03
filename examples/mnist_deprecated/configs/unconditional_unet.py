@@ -19,14 +19,14 @@ def get_config(imgs_shape):
 
     # denoiser network
     config.is_biggan = True
-    # TODO: this is weird, use list final dimensions instead
+    # limamau: this is weird, use list with final dimensions of each block instead
     config.dim_mults = [2, 4, 8]
     config.hidden_size = 16
     config.heads = 1
     config.dim_head = 8
     config.dropout_rate = 0.2
     config.num_res_blocks = 3
-    # TODO: this is weird, use list of booleans instead
+    # limamau this is weird, use list of booleans instead
     config.attn_resolutions = [7]
     config.is_conditional = False
     config.network = UNet(
