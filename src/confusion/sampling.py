@@ -1,6 +1,6 @@
 import functools as ft
-from abc import ABC, abstractmethod
-from typing import Tuple
+from abc import abstractmethod
+from typing import Optional, Tuple
 
 import diffrax as dfx
 import jax
@@ -11,36 +11,38 @@ from equinox import filter_jit
 from jaxtyping import Array, Key
 
 from .diffusion import AbstractDiffusionModel
+from .guidance import AbstractGuidance, GuidanceFree
 
 
-class AbstractSampler(ABC):
+class AbstractSampler:
     @abstractmethod
     def single_sample(
         self,
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
-        conds: Array | None,
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
         key: Key,
     ) -> Array:
-        pass
+        raise NotImplementedError
 
-    # limamau: add possibility to use modifiers and use explicitly
-    # the score instead of getting it from the model
     def sample(
         self,
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
-        conds: Array | None,
+        conds: Optional[Array],
         key: Key,
         norm_mean: Array,
         norm_std: Array,
         sample_size: int,
+        guidance: AbstractGuidance = GuidanceFree(),
     ) -> Array:
         sample_key = jr.split(key, sample_size)
         sample_fn = ft.partial(
             self.single_sample,
             model,
             data_shape,
+            guidance,
         )
         gen_samples = jax.vmap(sample_fn)(conds, sample_key)  # pyright: ignore
         return norm_mean + norm_std * gen_samples
@@ -61,16 +63,17 @@ class ODESampler(AbstractSampler):
         self,
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
-        conds: Array | None,
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
         key: Key,
     ) -> Array:
-        def fn(t, x, args):
+        def fun(t, x, args):
             f = model.drift(x, t)
             g2 = jnp.square(model.diffusion(t))
-            s = model.score(x, t, conds)
-            return f - 0.5 * g2 * s
+            score = guidance.apply(model, x, t, conds, key=None)
+            return f - 0.5 * g2 * score
 
-        term = dfx.ODETerm(fn)
+        term = dfx.ODETerm(fun)
         t0 = model.t0
         x1 = jr.normal(key, data_shape)
         # solve from t1 to t0
@@ -95,15 +98,16 @@ class SDESampler(AbstractSampler):
         self,
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
-        conds: Array | None,
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
         key: Key,
         solver: AbstractSolver = dfx.Euler(),
     ) -> Array:
         def back_drift(t, x, args):
             f = model.drift(x, t)
             g2 = jnp.square(model.diffusion(t))
-            s = model.score(x, t, conds)
-            return f - g2 * s
+            score = guidance.apply(model, x, t, conds, key=key)
+            return f - g2 * score
 
         def back_diffusion(t, x, args):
             return model.diffusion(t)

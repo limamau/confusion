@@ -225,7 +225,7 @@ class ResnetBlock(eqx.Module):
         else:
             self.attn = None
 
-    def __call__(self, x: Array, t: Array, c: Array | None, *, key: Key) -> Array:
+    def __call__(self, x: Array, t: Array, c: Optional[Array], *, key: Key) -> Array:
         C, _, _ = x.shape
         # In DDPM, each set of resblocks ends with an up/down sampling. In
         # biggan there is a final resblock after the up/downsampling. In this
@@ -512,7 +512,14 @@ class UNet(AbstractNetwork):
             eqx.nn.Conv2d(hidden_size, data_channels, 1, key=keys[7]),
         ]
 
-    def __call__(self, x: Array, t: Array, c: Array | None, *, key=None) -> Array:
+    def __call__(
+        self,
+        x: Array,
+        t: Array,
+        c: Optional[Array],
+        *,
+        key: Optional[Key] = None,
+    ) -> Array:
         t = self.time_pos_emb(t)
         t = self.t_mlp(t)
         if c is not None:

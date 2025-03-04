@@ -6,6 +6,7 @@ import ml_collections
 import optax
 
 from confusion.diffusion import VarianceExploding
+from confusion.guidance import MomentMatchingGuidance
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ODESampler
 
@@ -73,6 +74,12 @@ def get_config():
     config.sampler = ODESampler(config.dt0, config.t1)
     config.sample_size = 1000
     config.conds = None
-    config.do_B = 3
+    config.do_B = 1.0
+    config.const_matrix = jnp.array([[0.0, config.do_B, 0.0]])
+    config.y = jnp.array([config.do_B])
+    config.guidance = MomentMatchingGuidance(
+        config.const_matrix,
+        config.y,
+    )
 
     return config

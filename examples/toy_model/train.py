@@ -1,6 +1,7 @@
 import argparse
 
 import jax.numpy as jnp
+import jax.random as jr
 from configs import get_config
 from experiment import get_joint
 
@@ -12,6 +13,7 @@ from confusion.utils import normalize
 def main(args):
     # get config
     config = get_config(args)
+    seed = config.seed
     num_samples = config.num_samples
     num_steps = config.num_steps
     batch_size = config.batch_size
@@ -24,7 +26,8 @@ def main(args):
     train_key = config.train_key
 
     # generate samples
-    A, B, C = get_joint(num_samples)
+    key = jr.PRNGKey(seed)
+    A, B, C = get_joint(num_samples, key)
     samples = jnp.concatenate([A, B, C], axis=1)
     print("joint shape:", samples.shape)
     samples, _, _ = normalize(samples)

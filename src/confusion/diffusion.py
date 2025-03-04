@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 import equinox as eqx
 import jax
@@ -84,7 +84,7 @@ class VariancePreserving(AbstractDiffusionModel):
         t: Array,
         c: Array | None,
         *,
-        key: Key | None = None,
+        key: Optional[Key] = None,
     ) -> Array:
         return self.network(x, t, c, key=key)
 

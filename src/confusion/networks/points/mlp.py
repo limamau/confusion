@@ -1,3 +1,5 @@
+from typing import Optional
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -46,7 +48,14 @@ class MultiLayerPerceptron(AbstractNetwork):
         self.hidden_linear3 = eqx.nn.Linear(hidden_size, hidden_size, key=keys[3])
         self.out_linear = eqx.nn.Linear(hidden_size, num_variables, key=keys[4])
 
-    def __call__(self, y: Array, t: Array, c: Array | None, *, key=None) -> Array:
+    def __call__(
+        self,
+        y: Array,
+        t: Array,
+        c: Array | None,
+        *,
+        key: Optional[Key] = None,
+    ) -> Array:
         # time embedding (Fourier)
         t = self.temb(t)
 

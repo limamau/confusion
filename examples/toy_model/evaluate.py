@@ -1,9 +1,11 @@
 import argparse
+import time
 
 import jax.numpy as jnp
+import jax.random as jr
 import matplotlib.pyplot as plt
 from configs import get_config
-from experiment import get_joint
+from experiment import get_joint, print_mean_and_variance
 
 from confusion.checkpointing import Checkpointer
 from confusion.utils import normalize
@@ -12,6 +14,7 @@ from confusion.utils import normalize
 def main(args):
     # get config
     config = get_config(args)
+    seed = config.seed
     model = config.model
     opt = config.opt
     saving_path = config.saving_path
@@ -22,9 +25,11 @@ def main(args):
     conds = config.conds
     sampler = config.sampler
     do_B = config.do_B
+    guidance = config.guidance
 
     # generate samples
-    ref_A, ref_B, ref_C = get_joint(sample_size)
+    key = jr.PRNGKey(seed)
+    ref_A, ref_B, ref_C = get_joint(sample_size, key)
     ref_samples = jnp.concatenate([ref_A, ref_B, ref_C], axis=1)
     ref_samples, ref_samples_mean, ref_samples_std = normalize(ref_samples)
 
@@ -38,70 +43,11 @@ def main(args):
     # restore
     model, _ = ckpter.restore(model, opt)
 
-    # sampling
-    gen_samples = sampler.sample(
-        model,
-        ref_samples.shape[1:],
-        conds,
-        sample_key,
-        ref_samples_mean,
-        ref_samples_std,
-        sample_size,
-    )
-    gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
-
-    # comparisons without intervention
-    # for ref, gen, label in (
-    #     (ref_A, gen_A, "A"),
-    #     (ref_B, gen_B, "B"),
-    #     (ref_C, gen_C, "C"),
-    # ):
-    #     plt.hist(ref.flatten(), bins=20, alpha=0.5, label="ref")
-    #     plt.hist(gen.flatten(), bins=20, alpha=0.5, label="gen")
-    #     plt.title(f"No Intervention ({label})")
-    #     plt.legend()
-    #     plt.show()
-
-    # # ref histogram
-    # plt.figure(figsize=(6, 4))
-    # plt.hist(ref_A.flatten(), bins=20, alpha=0.5, label="A")
-    # plt.hist(ref_B.flatten(), bins=20, alpha=0.5, label="B")
-    # plt.hist(ref_C.flatten(), bins=20, alpha=0.5, label="C")
-    # plt.title("Reference distributions")
-    # plt.legend()
-    # plt.show()
-
-    # # gen histogram
-    # plt.figure(figsize=(6, 4))
-    # plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
-    # plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
-    # plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
-    # plt.title("Generated distributions")
-    # plt.legend()
-    # plt.show()
-
-    # # show B as a function of A
-    # plt.scatter(
-    #     gen_A.flatten(),
-    #     gen_B.flatten(),
-    #     alpha=0.1,
-    #     label="gen",
-    # )
-    # plt.scatter(
-    #     jnp.sort(ref_A.flatten()),
-    #     jnp.sort(ref_B.flatten()),
-    #     alpha=0.1,
-    #     label="ref",
-    # )
-    # plt.title("p(B | A)")
-    # plt.xlabel("A")
-    # plt.ylabel("B")
-    # plt.legend()
-    # plt.show()
-
     # no intervention - reference
     plt.figure(figsize=(3, 2), dpi=200)
-    ref_A, ref_B, ref_C = get_joint(sample_size)
+    ref_A, ref_B, ref_C = get_joint(sample_size, key)
+    print("No intervention - reference")
+    print_mean_and_variance(ref_A, ref_B, ref_C)
     plt.hist(ref_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(ref_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(ref_C.flatten(), bins=20, alpha=0.5, label="C")
@@ -113,7 +59,9 @@ def main(args):
 
     # do(B) intervention - reference
     plt.figure(figsize=(3, 2), dpi=200)
-    ref_A, ref_B, ref_C = get_joint(sample_size, do_B=do_B)
+    ref_A, ref_B, ref_C = get_joint(sample_size, key, do_B=do_B)
+    print("Do(B={}) - reference".format(do_B))
+    print_mean_and_variance(ref_A, ref_B, ref_C)
     plt.hist(ref_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(ref_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(ref_C.flatten(), bins=20, alpha=0.5, label="C")
@@ -124,18 +72,59 @@ def main(args):
     plt.show()
 
     # no intervention - diffusion experiment
+    # (sampling with no guidance)
+    start_time = time.time()
+    gen_samples = sampler.sample(
+        model,
+        ref_samples.shape[1:],
+        conds,
+        sample_key,
+        ref_samples_mean,
+        ref_samples_std,
+        sample_size,
+    )
+    end_time = time.time()
+    gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
+    print("No intervention - diffusion model")
+    print("Sampling time: {:.2f} seconds".format(end_time - start_time))
+    print_mean_and_variance(gen_A, gen_B, gen_C)
     plt.figure(figsize=(3, 2), dpi=200)
     plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
-    plt.title("Diffusion generation")
+    plt.title("No Intervention - diffusion model")
     plt.xlim(-5, 5)
     plt.ylim(0, 200)
     plt.legend()
     plt.show()
 
-    # do(B) intervention
-    # TO BE DONE
+    # do(B) intervention - diffusion experiment
+    # (sampling with guidance)
+    start_time = time.time()
+    gen_samples = sampler.sample(
+        model,
+        ref_samples.shape[1:],
+        conds,
+        sample_key,
+        ref_samples_mean,
+        ref_samples_std,
+        sample_size,
+        guidance=guidance,
+    )
+    end_time = time.time()
+    gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
+    print("Do(B={}) - diffusion model".format(do_B))
+    print("Sampling time: {:.2f} seconds".format(end_time - start_time))
+    print_mean_and_variance(gen_A, gen_B, gen_C)
+    plt.figure(figsize=(3, 2), dpi=200)
+    plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
+    plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
+    plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
+    plt.title("Do(B={}) - diffusion model".format(do_B))
+    plt.xlim(-5, 5)
+    plt.ylim(0, 200)
+    plt.legend()
+    plt.show()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 
 import einops
 import equinox as eqx
@@ -90,7 +90,12 @@ class Mixer(AbstractNetwork):
         self.t1 = t1
 
     def __call__(
-        self, x: Array, t: Array, c: Array | None, *, key: Key | None = None
+        self,
+        x: Array,
+        t: Array,
+        c: Optional[Array],
+        *,
+        key: Optional[Key] = None,
     ) -> Array:
         t = jnp.array(t / self.t1)
         _, height, width = x.shape
