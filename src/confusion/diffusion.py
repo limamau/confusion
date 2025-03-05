@@ -4,31 +4,48 @@ from typing import Callable, Optional, Tuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import jax.random as jr
 from jaxtyping import Array, Key
 
 from .networks import AbstractNetwork
 
 
+# limamau: this class has to have s_t and sigma_t explicitly
+# maybe as methods, maybe as attributes... should this be a property?
+# in any case, these two elements should be used to calculate the moment
+# matching guidance in a more general way
 class AbstractDiffusionModel(eqx.Module):
     network: AbstractNetwork
-    weights: Callable
+    weights_fn: Callable
     t0: float
     t1: float
 
     @abstractmethod
+    def s(self, t: Array) -> Array:
+        raise NotImplementedError
+
+    @abstractmethod
+    def sigma(self, t: Array) -> Array:
+        raise NotImplementedError
+
+    # in practice, it is probably better to override this method
+    # in order to provide a more efficient implementation
     def diffusion(self, t: Array) -> Array:
-        raise NotImplementedError
+        s_t = self.s(t)
+        sigma_t = self.sigma(t)
+        sigma_t2 = jnp.square(sigma_t)
+        sigma_t_dot = jnp.gradient(sigma_t2, t)
+        s_t_dot = jnp.gradient(s_t, t)
+        return sigma_t_dot * sigma_t - sigma_t2 * s_t_dot / s_t
 
-    @abstractmethod
+    # again, it is probably better to override this method
+    # in order to provide a more efficient implementation
     def drift(self, x: Array, t: Array) -> Array:
-        raise NotImplementedError
+        s_t = self.s(t)
+        s_t_dot = jnp.gradient(s_t, t)
+        return s_t_dot / s_t * x
 
-    @abstractmethod
-    def perturbation(
-        self, x0: Array, t: Array, *, key: Key
-    ) -> Tuple[Array, Array, Array]:
-        raise NotImplementedError
+    def perturbation(self, x0: Array, t: Array, *, key: Key) -> Tuple[Array, Array]:
+        return self.s(t) * x0, self.sigma(t)
 
     @abstractmethod
     def score(
@@ -43,7 +60,7 @@ class AbstractDiffusionModel(eqx.Module):
 
 
 class VariancePreserving(AbstractDiffusionModel):
-    int_beta: Callable
+    int_beta_fn: Callable
 
     def __init__(
         self,
@@ -54,29 +71,26 @@ class VariancePreserving(AbstractDiffusionModel):
         weights_fn: Callable,
     ):
         self.network = network
-        self.weights = weights_fn
+        self.weights_fn = weights_fn
         self.t0 = t0
         self.t1 = t1
-        self.int_beta = int_beta_fn
+        self.int_beta_fn = int_beta_fn
+
+    def s(self, t: Array) -> Array:
+        return jnp.exp(-0.5 * self.int_beta_fn(t))
+
+    def sigma(self, t: Array) -> Array:
+        return jnp.sqrt(1 - jnp.exp(-self.int_beta_fn(t)))
 
     def diffusion(self, t: Array) -> Array:
         # get beta by derivating the integral
-        _, beta = jax.jvp(self.int_beta, (t,), (jnp.ones_like(t),))
+        _, beta = jax.jvp(self.int_beta_fn, (t,), (jnp.ones_like(t),))
         return jnp.sqrt(beta)
 
     def drift(self, x: Array, t: Array) -> Array:
         # same here
-        _, beta = jax.jvp(self.int_beta, (t,), (jnp.ones_like(t),))
+        _, beta = jax.jvp(self.int_beta_fn, (t,), (jnp.ones_like(t),))
         return -0.5 * beta * x
-
-    def perturbation(
-        self, x0: Array, t: Array, *, key: Key
-    ) -> Tuple[Array, Array, Array]:
-        mean = x0 * jnp.exp(-0.5 * self.int_beta(t))
-        std = jnp.sqrt(jnp.maximum(1 - jnp.exp(-self.int_beta(t)), 1e-5))
-        noise = jr.normal(key, x0.shape)
-        x = mean + std * noise
-        return x, noise, std
 
     def score(
         self,
@@ -90,7 +104,7 @@ class VariancePreserving(AbstractDiffusionModel):
 
 
 class VarianceExploding(AbstractDiffusionModel):
-    sigma: Callable
+    sigma_fn: Callable
     sigma_min: float
     sigma_max: float
 
@@ -105,17 +119,23 @@ class VarianceExploding(AbstractDiffusionModel):
         is_approximate: bool = True,
     ):
         self.network = network
-        self.weights = weights_fn
+        self.weights_fn = weights_fn
         self.t0 = t0
         self.t1 = t1
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
         if is_approximate:
-            self.sigma = lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), t)
+            self.sigma_fn = lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), t)
         else:
-            self.sigma = lambda t: sigma_min * jnp.sqrt(
+            self.sigma_fn = lambda t: sigma_min * jnp.sqrt(
                 jnp.exp(jnp.log(sigma_max / sigma_min) * t) - 1
             )
+
+    def s(self, t: Array) -> Array:
+        return jnp.ones_like(t)
+
+    def sigma(self, t: Array) -> Array:
+        return self.sigma_fn(t)
 
     def diffusion(self, t: Array) -> Array:
         log_ratio = jnp.sqrt(2 * jnp.log(self.sigma_max / self.sigma_min))
@@ -123,14 +143,6 @@ class VarianceExploding(AbstractDiffusionModel):
 
     def drift(self, x: Array, t: Array) -> Array:
         return jnp.zeros_like(x)
-
-    def perturbation(
-        self, x0: Array, t: Array, *, key: Key
-    ) -> Tuple[Array, Array, Array]:
-        noise = jr.normal(key, x0.shape)
-        std = self.sigma(t)
-        x = x0 + std * noise
-        return x, noise, std
 
     def score(
         self,

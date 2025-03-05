@@ -1,6 +1,6 @@
 import functools as ft
 import time
-from typing import Callable, Iterator, Tuple
+from typing import Callable, Iterator, Optional, Tuple
 
 import equinox as eqx
 import jax
@@ -16,8 +16,8 @@ from .diffusion import AbstractDiffusionModel
 
 # auxiliary functions #
 def dataloader(
-    data: Array, conds: Array | None, batch_size: int, *, key: Key
-) -> Iterator[Tuple[Array, Array | None]]:
+    data: Array, conds: Optional[Array], batch_size: int, *, key: Key
+) -> Iterator[Tuple[Array, Optional[Array]]]:
     dataset_size = data.shape[0]
     indices = jnp.arange(dataset_size)
     while True:
@@ -39,19 +39,23 @@ def single_loss_fn(
     model: AbstractDiffusionModel,
     x0: Array,
     t: Array,
-    c: Array | None,
+    c: Optional[Array],
     key: Key,
 ) -> Array:
     noise_key, dropout_key = jr.split(key)
-    x, noise, std = model.perturbation(x0, t, key=noise_key)
+    mean, std = model.perturbation(x0, t, key=noise_key)
+    # to avoid division by zero
+    std = jnp.maximum(std, 1e-5)
+    noise = jr.normal(key, x0.shape)
+    x = mean + std * noise
     pred = model.score(x, t, c, key=dropout_key)
-    return model.weights(t) * jnp.mean((pred + noise / std) ** 2)
+    return model.weights_fn(t) * jnp.mean((pred + noise / std) ** 2)
 
 
 def batch_loss_fn(
     model: AbstractDiffusionModel,
     data: Array,
-    conds: Array | None,
+    conds: Optional[Array],
     key: Key,
 ) -> Array:
     batch_size = data.shape[0]
@@ -69,7 +73,7 @@ def batch_loss_fn(
 def make_step(
     model: AbstractDiffusionModel,
     data: Array,
-    conds: Array | None,
+    conds: Optional[Array],
     key: Key,
     opt_state: OptState,
     opt_update: Callable,
@@ -92,7 +96,7 @@ def train(
     print_every: int,
     ckpter: Checkpointer,
     key: Key,
-    conds: Array | None = None,
+    conds: Optional[Array] = None,
 ):
     # optax will update the floating-point JAX arrays in the model
     opt_state = opt.init(eqx.filter(model, eqx.is_inexact_array))
