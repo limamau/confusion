@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 from typing import List, Optional, Tuple, Union
 
@@ -9,35 +8,8 @@ import jax.random as jr
 from einops import rearrange
 from jaxtyping import Array, Key
 
-from ..network import AbstractNetwork
-
-
-class SinusoidalPosEmb(eqx.Module):
-    emb: jax.Array
-
-    def __init__(self, dim: int):
-        half_dim = dim // 2
-        emb = math.log(10000) / (half_dim - 1)
-        self.emb = jnp.exp(jnp.arange(half_dim) * -emb)
-
-    def __call__(self, x: Array) -> Array:
-        emb = x * self.emb
-        emb = jnp.concatenate((jnp.sin(emb), jnp.cos(emb)), axis=-1)
-        return emb
-
-
-# limamau: check if this implementation is correct
-class FourierFeatureEmb(eqx.Module):
-    projection: jax.Array
-
-    def __init__(
-        self, input_dim: int, mapping_dim: int, scale: float = 10.0, *, key: Key
-    ):
-        self.projection = jax.random.normal(key, (input_dim, mapping_dim)) * scale
-
-    def __call__(self, x: Array) -> Array:
-        projection = jnp.dot(x, self.projection)
-        return jnp.concatenate([jnp.sin(projection), jnp.cos(projection)], axis=-1)
+from ..layers import GaussianFourierProjection
+from ..networks import AbstractNaiveNetwork
 
 
 class LinearTimeSelfAttention(eqx.Module):
@@ -147,7 +119,7 @@ class ResnetBlock(eqx.Module):
         dim_head: int,
         *,
         key: Key,
-        is_conditional: bool = True,
+        is_conditional: bool = False,
     ):
         keys = jax.random.split(key, 7)
         self.dim_out = dim_out
@@ -265,8 +237,8 @@ class ResnetBlock(eqx.Module):
         return out
 
 
-class UNet(AbstractNetwork):
-    time_pos_emb: SinusoidalPosEmb
+class UNet(AbstractNaiveNetwork):
+    temb: GaussianFourierProjection
     t_mlp: eqx.nn.MLP
     c_mlp: eqx.nn.MLP | None
     first_conv: eqx.nn.Conv2d
@@ -291,7 +263,7 @@ class UNet(AbstractNetwork):
         key: Key,
         is_conditional: bool = True,
     ):
-        keys = jax.random.split(key, 8)
+        keys = jax.random.split(key, 9)
         del key
 
         data_channels, in_height, in_width = data_shape
@@ -300,14 +272,14 @@ class UNet(AbstractNetwork):
         in_out = list(exact_zip(dims[:-1], dims[1:]))
 
         # setup time handling
-        self.time_pos_emb = SinusoidalPosEmb(hidden_size)
+        self.temb = GaussianFourierProjection(hidden_size, key=keys[0])
         self.t_mlp = eqx.nn.MLP(
             hidden_size,
             hidden_size,
             4 * hidden_size,
             1,
             activation=jax.nn.silu,
-            key=keys[0],
+            key=keys[1],
         )
 
         # setup conditional handling (no positional encoding here)
@@ -318,14 +290,14 @@ class UNet(AbstractNetwork):
                 4 * hidden_size,
                 1,
                 activation=jax.nn.silu,
-                key=keys[1],
+                key=keys[2],
             )
         else:
             self.c_mlp = None
 
         # lifting layer
         self.first_conv = eqx.nn.Conv2d(
-            data_channels, hidden_size, kernel_size=3, padding=1, key=keys[2]
+            data_channels, hidden_size, kernel_size=3, padding=1, key=keys[3]
         )
 
         h, w = in_height, in_width
@@ -333,7 +305,7 @@ class UNet(AbstractNetwork):
         # setup resnet blocks for downsampling
         self.down_res_blocks = []
         num_keys = len(in_out) * num_res_blocks - 1
-        keys_resblock = jr.split(keys[3], num_keys)
+        keys_resblock = jr.split(keys[4], num_keys)
         i = 0
         for ind, (dim_in, dim_out) in enumerate(in_out):
             if h in attn_resolutions and w in attn_resolutions:
@@ -414,7 +386,7 @@ class UNet(AbstractNetwork):
             is_attn=True,
             heads=heads,
             dim_head=dim_head,
-            key=keys[4],
+            key=keys[5],
             is_conditional=is_conditional,
         )
         self.mid_block2 = ResnetBlock(
@@ -429,14 +401,14 @@ class UNet(AbstractNetwork):
             is_attn=False,
             heads=heads,
             dim_head=dim_head,
-            key=keys[5],
+            key=keys[6],
             is_conditional=is_conditional,
         )
 
         # setup resnet blocks for upsampling
         self.ups_res_blocks = []
         num_keys = len(in_out) * (num_res_blocks + 1) - 1
-        keys_resblock = jr.split(keys[6], num_keys)
+        keys_resblock = jr.split(keys[7], num_keys)
         i = 0
         for ind, (dim_in, dim_out) in enumerate(reversed(in_out)):
             if h in attn_resolutions and w in attn_resolutions:
@@ -509,7 +481,7 @@ class UNet(AbstractNetwork):
         self.final_conv_layers = [
             eqx.nn.GroupNorm(min(hidden_size // 4, 32), hidden_size),
             jax.nn.silu,
-            eqx.nn.Conv2d(hidden_size, data_channels, 1, key=keys[7]),
+            eqx.nn.Conv2d(hidden_size, data_channels, 1, key=keys[8]),
         ]
 
     def __call__(
@@ -520,11 +492,11 @@ class UNet(AbstractNetwork):
         *,
         key: Optional[Key] = None,
     ) -> Array:
-        t = self.time_pos_emb(t)
+        t = self.temb(t)
         t = self.t_mlp(t)
         if c is not None:
             assert self.c_mlp is not None
-            c = self.time_pos_emb(c)
+            c = self.temb(c)
             c = self.c_mlp(c)
         h = self.first_conv(x)
         hs = [h]

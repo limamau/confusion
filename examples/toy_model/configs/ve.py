@@ -11,9 +11,11 @@ from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ODESampler
 
 
+# limamau: use dataclass instead in order to allow
+# static type checking and do the same for vp
 def get_config():
     config = ml_collections.ConfigDict()
-    config.experiment_name = "ve_mlp"
+    config.experiment_name = "ve"
 
     # dataset
     config.num_samples = 10_000

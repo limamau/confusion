@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
-from ..network import AbstractNetwork
+from ..networks import AbstractNaiveNetwork
 
 
 class MixerBlock(eqx.Module):
@@ -43,7 +43,7 @@ class MixerBlock(eqx.Module):
         return x
 
 
-class Mixer(AbstractNetwork):
+class Mixer(AbstractNaiveNetwork):
     conv_in: eqx.nn.Conv2d
     conv_out: eqx.nn.ConvTranspose2d
     blocks: list
@@ -61,7 +61,7 @@ class Mixer(AbstractNetwork):
         t1: float,
         *,
         key: Key,
-        is_conditional: bool = True,
+        is_conditional: bool = False,
     ):
         input_size, height, width = img_size
         assert (height % patch_size) == 0

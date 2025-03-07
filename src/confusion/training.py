@@ -44,7 +44,7 @@ def single_loss_fn(
 ) -> Array:
     noise_key, dropout_key = jr.split(key)
     mean, std = model.perturbation(x0, t, key=noise_key)
-    # to avoid division by zero
+    # clip std to avoid division by zero
     std = jnp.maximum(std, 1e-5)
     noise = jr.normal(key, x0.shape)
     x = mean + std * noise
@@ -106,10 +106,10 @@ def train(
     total_value = 0
     total_size = 0
 
-    # let's go!
+    # training loop
     start_time = time.time()
     for step, (data, conds) in zip(
-        range(num_steps), dataloader(data, conds, batch_size, key=loader_key)
+        range(num_steps + 1), dataloader(data, conds, batch_size, key=loader_key)
     ):
         value, model, train_key, opt_state = make_step(
             model, data, conds, train_key, opt_state, opt.update
@@ -118,7 +118,7 @@ def train(
         total_size += 1
 
         # logging
-        if (step % print_every) == 0 or step == num_steps - 1:
+        if step % print_every == 0:
             elapsed_time = time.time() - start_time
             print(
                 f"Step: {step}, "
@@ -130,6 +130,6 @@ def train(
             total_size = 0
 
         # checkpointing
-        if step % ckpter.save_every == 0 or step == num_steps - 1:
+        if step % ckpter.save_every == 0:
             ckpter.save(step, model, opt_state)
     ckpter.mngr.wait_until_finished()
