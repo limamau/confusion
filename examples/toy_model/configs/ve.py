@@ -1,9 +1,11 @@
 import os
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import jax.numpy as jnp
 import jax.random as jr
-import ml_collections
 import optax
+from jaxtyping import Array, Key
 
 from confusion.diffusion import VarianceExploding
 from confusion.guidance import MomentMatchingGuidance
@@ -11,77 +13,112 @@ from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ODESampler
 
 
-# limamau: use dataclass instead in order to allow
-# static type checking and do the same for vp
-def get_config():
-    config = ml_collections.ConfigDict()
-    config.experiment_name = "ve"
+@dataclass
+class Config:
+    """Configuration for variance exploding diffusion model."""
 
-    # dataset
-    config.num_samples = 10_000
+    name: str = "ve"
 
-    # keys
-    config.seed = 5678
-    key = jr.PRNGKey(config.seed)
-    config.net_key, config.train_key, config.sample_key = jr.split(key, 3)
+    # 1. keys
+    seed: int = 5678
+    data_key: Key = field(init=False)
+    net_key: Key = field(init=False)
+    train_key: Key = field(init=False)
+    sample_key: Key = field(init=False)
 
-    # network
-    config.t1 = 3.0
-    config.num_variables = 3
-    config.hidden_size = 256
-    config.is_conditional = False
-    config.network = MultiLayerPerceptron(
-        config.num_variables,
-        config.hidden_size,
-        config.t1,
-        key=config.net_key,
-        is_conditional=config.is_conditional,
-    )
+    # 2. dataset
+    num_samples: int = 10_000
 
-    # diffusion model
-    config.t0 = 0.1
-    config.sigma_min = 0.1
-    config.sigma_max = 0.12
-    config.weight_fn = lambda t: config.sigma_min * jnp.pow(
-        (config.sigma_max / config.sigma_min), 2 * t
-    )  # weight is taken to be equal to sigma(t)^2
-    config.is_approximate = False
-    config.model = VarianceExploding(
-        config.network,
-        config.weight_fn,
-        config.t0,
-        config.t1,
-        config.sigma_min,
-        config.sigma_max,
-        is_approximate=config.is_approximate,
-    )
+    # 3. network
+    num_variables: int = 3
+    hidden_size: int = 256
+    is_conditional: bool = False
+    network: MultiLayerPerceptron = field(init=False)
 
-    # optimization
-    config.num_steps = 10_000
-    config.lr = 1e-3
-    config.batch_size = 16
-    config.opt = optax.adam(config.lr)
+    # 4. diffusion model
+    t0: float = 0.1
+    t1: float = 3.0
+    sigma_min: float = 0.1
+    sigma_max: float = 0.12
+    is_approximate: bool = False
+    model: VarianceExploding = field(init=False)
 
-    # logging and checkpointing
-    config.print_every = 1000
-    config.max_save_to_keep = 1
-    config.save_every = 5_000
-    config.saving_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        f"../checkpoints/{config.experiment_name}",
-    )
+    # 5. optimization
+    num_steps: int = 10_000
+    lr: float = 1e-3
+    batch_size: int = 16
+    opt: optax.GradientTransformation = field(init=False)
 
-    # sampling
-    config.dt0 = 0.01
-    config.sampler = ODESampler(config.dt0, config.t1)
-    config.sample_size = 1000
-    config.conds = None
-    config.do_B = 1.0
-    config.const_matrix = jnp.array([[0.0, config.do_B, 0.0]])
-    config.y = jnp.array([config.do_B])
-    config.guidance = MomentMatchingGuidance(
-        config.const_matrix,
-        config.y,
-    )
+    # 6. logging and checkpointing
+    print_every: int = 1000
+    max_save_to_keep: int = 1
+    save_every: int = 5_000
+    saving_path: str = field(init=False)
 
-    return config
+    # 7. sampling
+    dt0: float = 0.01
+    sample_size: int = 1000
+    conds: Optional[Any] = None
+    sampler: ODESampler = field(init=False)
+
+    # 8. guidance
+    do_B: float = 1.0
+    const_matrix: Array = field(init=False)
+    y: Array = field(init=False)
+    guidance: MomentMatchingGuidance = field(init=False)
+
+    def __post_init__(self):
+        # 1. keys init
+        key = jr.PRNGKey(self.seed)
+        self.data_key, self.net_key, self.train_key, self.sample_key = jr.split(key, 4)
+
+        # 2. dataset init
+        # done during train/evaluate
+
+        # 3. network init
+        self.network = MultiLayerPerceptron(
+            self.num_variables,
+            self.hidden_size,
+            self.t1,
+            key=self.net_key,
+            is_conditional=self.is_conditional,
+        )
+
+        # 4. diffusion model init
+        # weight is taken to be equal to sigma(t)^2
+        def weight_fn(t):
+            return self.sigma_min * jnp.pow((self.sigma_max / self.sigma_min), 2 * t)
+
+        self.model = VarianceExploding(
+            self.network,
+            weight_fn,
+            self.t0,
+            self.t1,
+            self.sigma_min,
+            self.sigma_max,
+            is_approximate=self.is_approximate,
+        )
+
+        # 5. optimizer init
+        self.opt = optax.adam(self.lr)
+
+        # 6. saving path init
+        self.saving_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            f"../checkpoints/{self.name}",
+        )
+
+        # 7. sampler init
+        self.sampler = ODESampler(self.dt0, self.t1)
+
+        # 8. guidance init
+        self.const_matrix = jnp.array([[0.0, self.do_B, 0.0]])
+        self.y = jnp.array([self.do_B])
+        self.guidance = MomentMatchingGuidance(
+            self.const_matrix,
+            self.y,
+        )
+
+
+def get_config() -> Config:
+    return Config()

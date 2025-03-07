@@ -14,6 +14,7 @@ from confusion.utils import normalize
 def main(args):
     # get config
     config = get_config(args)
+    name = config.name
     seed = config.seed
     model = config.model
     opt = config.opt
@@ -85,14 +86,14 @@ def main(args):
     )
     end_time = time.time()
     gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
-    print("No intervention - diffusion model")
+    print("No intervention - {}".format(name.upper()))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B, gen_C)
     plt.figure(figsize=(3, 2), dpi=200)
     plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
-    plt.title("No Intervention - diffusion model")
+    plt.title("No Intervention - {}".format(name.upper()))
     plt.xlim(-5, 5)
     plt.ylim(0, 200)
     plt.legend()
@@ -113,14 +114,14 @@ def main(args):
     )
     end_time = time.time()
     gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
-    print("Do(B={}) - diffusion model".format(do_B))
+    print("Do(B={}) - {}".format(do_B, name.upper()))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B, gen_C)
     plt.figure(figsize=(3, 2), dpi=200)
     plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
-    plt.title("Do(B={}) - diffusion model".format(do_B))
+    plt.title("Do(B={}) - {}".format(do_B, name.upper()))
     plt.xlim(-5, 5)
     plt.ylim(0, 200)
     plt.legend()
