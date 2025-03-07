@@ -1,8 +1,12 @@
-from . import ve, vp
+from . import cve, cvp, ve, vp
 
 
 def get_config(args):
-    if args.config == "ve":
+    if args.config == "cve":
+        return cve.get_config()
+    elif args.config == "cvp":
+        return cvp.get_config()
+    elif args.config == "ve":
         return ve.get_config()
     elif args.config == "vp":
         return vp.get_config()
