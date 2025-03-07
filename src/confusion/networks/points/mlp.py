@@ -6,28 +6,11 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
-from ..network import AbstractNetwork
+from ..layers import GaussianFourierProjection
+from ..networks import AbstractNaiveNetwork
 
 
-# limamau: move this function to a "layers" to src/confusion/networks/points/layers.py
-# and use both here and in the UNet
-class GaussianFourierProjection(eqx.Module):
-    gaussian: jax.Array
-
-    def __init__(self, mapping_dim: int, scale: float = 10.0, *, key: Key):
-        self.gaussian = jax.random.normal(key, (mapping_dim // 2,)) * scale
-
-    def __call__(self, t: Array) -> Array:
-        projection = t * self.gaussian * 2 * jnp.pi
-        return jnp.concatenate([jnp.sin(projection), jnp.cos(projection)], axis=-1).T
-
-
-# limamau: write an instance of the equinox.nn.MultiheadAttention
-# but now allowing for explicit masks that can will be used to encode
-# the causal relations
-
-
-class MultiLayerPerceptron(AbstractNetwork):
+class MultiLayerPerceptron(AbstractNaiveNetwork):
     temb: GaussianFourierProjection
     in_linear: eqx.nn.Linear
     hidden_linear1: eqx.nn.Linear
@@ -42,7 +25,7 @@ class MultiLayerPerceptron(AbstractNetwork):
         t1: float,
         *,
         key: Key,
-        is_conditional=True,
+        is_conditional: bool = False,
     ):
         keys = jr.split(key, 6)
 
@@ -62,9 +45,9 @@ class MultiLayerPerceptron(AbstractNetwork):
 
     def __call__(
         self,
-        y: Array,
+        x: Array,
         t: Array,
-        c: Array | None,
+        c: Optional[Array],
         *,
         key: Optional[Key] = None,
     ) -> Array:
@@ -74,19 +57,19 @@ class MultiLayerPerceptron(AbstractNetwork):
         # concatenate inputs
         if c is not None:
             c = jnp.expand_dims(c, axis=0) if c.ndim == 0 else c
-            y = jnp.concatenate([y, t, c])
+            x = jnp.concatenate([x, t, c])
         else:
-            y = jnp.concatenate([y, t])
+            x = jnp.concatenate([x, t])
 
         # MLP
-        y = self.in_linear(y)
-        y = jax.nn.swish(y)
-        y = self.hidden_linear1(y)
-        y = jax.nn.swish(y)
-        y = self.hidden_linear2(y)
-        y = jax.nn.swish(y)
-        y = self.hidden_linear3(y)
-        y = jax.nn.swish(y)
-        y = self.out_linear(y)
+        x = self.in_linear(x)
+        x = jax.nn.swish(x)
+        x = self.hidden_linear1(x)
+        x = jax.nn.swish(x)
+        x = self.hidden_linear2(x)
+        x = jax.nn.swish(x)
+        x = self.hidden_linear3(x)
+        x = jax.nn.swish(x)
+        x = self.out_linear(x)
 
-        return y
+        return x

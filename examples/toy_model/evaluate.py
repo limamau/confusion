@@ -134,6 +134,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         choices=[
+            "cve",
+            "cvp",
             "ve",
             "vp",
         ],

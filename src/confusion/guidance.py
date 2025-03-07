@@ -48,12 +48,6 @@ class MomentMatchingGuidance(AbstractGuidance):
         self.C = jnp.asarray(const_matrix)
         self.y = jnp.asarray(y)
 
-    # limamau:
-    # (1) re-write this code as a function of the formula obtained in Tweedie’s Covariance
-    # then it's easier to use this both for variance preserving and variance exploding
-    # (2) that should also open up the possibility to have a ManifoldGuidance class by switching the score
-    # to (y + mean) * std for the values that should be inferred during guidance - maybe use a list of bools
-    # to encode that and y should be a tuple of arrays with the same dimension as the number of true values
     def apply(
         self,
         model: AbstractDiffusionModel,
@@ -93,3 +87,9 @@ class MomentMatchingGuidance(AbstractGuidance):
             )[0, 0]  # t is a float for sampling
 
         return eqx.filter_grad(logpdf)(x)
+
+
+# limamau: create a ManifoldGuidance class by switching the score to (y + mean) * std
+# for the values that should be inferred during guidance - maybe use a list of bools
+# to encode that and y should be a tuple of arrays with the same dimension as the number
+# of true values

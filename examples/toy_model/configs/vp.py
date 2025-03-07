@@ -13,7 +13,7 @@ from confusion.sampling import ODESampler
 
 def get_config():
     config = ml_collections.ConfigDict()
-    config.experiment_name = "vp_mlp"
+    config.experiment_name = "vp"
 
     # dataset
     config.num_samples = 10_000

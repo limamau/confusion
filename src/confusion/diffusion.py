@@ -9,10 +9,6 @@ from jaxtyping import Array, Key
 from .networks import AbstractNetwork
 
 
-# limamau: this class has to have s_t and sigma_t explicitly
-# maybe as methods, maybe as attributes... should this be a property?
-# in any case, these two elements should be used to calculate the moment
-# matching guidance in a more general way
 class AbstractDiffusionModel(eqx.Module):
     network: AbstractNetwork
     weights_fn: Callable
