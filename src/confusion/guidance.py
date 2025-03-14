@@ -16,7 +16,7 @@ class AbstractGuidance:
         model: AbstractDiffusionModel,
         x: Array,
         t: Array,
-        c: Array | None,
+        c: Optional[Array],
         *,
         key: Key,
     ) -> Array:
@@ -33,13 +33,14 @@ class GuidanceFree(AbstractGuidance):
         model: AbstractDiffusionModel,
         x: Array,
         t: Array,
-        c: Array | None,
+        c: Optional[Array],
         *,
         key: Key,
     ) -> Array:
         return model.score(x, t, c, key=key)
 
 
+# following https://proceedings.mlr.press/v202/finzi23a.html
 class MomentMatchingGuidance(AbstractGuidance):
     C: Array
     y: Array
@@ -53,7 +54,7 @@ class MomentMatchingGuidance(AbstractGuidance):
         model: AbstractDiffusionModel,
         x: Array,
         t: Array,
-        c: Array | None,
+        c: Optional[Array],
         *,
         key: Optional[Key] = None,
     ) -> Array:
@@ -86,7 +87,7 @@ class MomentMatchingGuidance(AbstractGuidance):
                 scale=mult_C_Sigma_hat(x) @ self.C.T,
             )[0, 0]  # t is a float for sampling
 
-        return eqx.filter_grad(logpdf)(x)
+        return eqx.filter_grad(logpdf)(x) + model.score(x, t, c, key=key)
 
 
 # limamau: create a ManifoldGuidance class by switching the score to (y + mean) * std

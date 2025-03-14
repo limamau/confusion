@@ -1,9 +1,12 @@
+from typing import Optional
+
 import jax.numpy as jnp
 import jax.random as jr
 import matplotlib.pyplot as plt
+from jaxtyping import Array, Key
 
 
-def print_mean_and_variance(samples_A, samples_B, samples_C):
+def print_mean_and_variance(samples_A: Array, samples_B: Array, samples_C: Array):
     mean_A = jnp.mean(samples_A)
     std_A = jnp.std(samples_A)
     mean_B = jnp.mean(samples_B)
@@ -16,7 +19,9 @@ def print_mean_and_variance(samples_A, samples_B, samples_C):
     print()
 
 
-def get_joint(num_samples, key, do_B=None):
+def get_joint(
+    num_samples: int, key: Key, do_B: Optional[float] = None
+) -> tuple[Array, Array, Array]:
     # split keys
     key_A, key_B, key_C = jr.split(key, 3)
 

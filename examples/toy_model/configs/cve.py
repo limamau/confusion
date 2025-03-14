@@ -39,7 +39,7 @@ class Config:
     num_heads: int = 1
     qkv_size: int = 8
     is_conditional: bool = False
-    causal_mask: Bool[Array, "num_vars num_vars"] = field(init=False)
+    causal_mask: Bool[Array, " num_vars num_vars"] = field(init=False)
     network: CausalMultiLayerPerceptron = field(init=False)
 
     # 4. diffusion model
@@ -133,7 +133,3 @@ class Config:
             self.const_matrix,
             self.y,
         )
-
-
-def get_config() -> Config:
-    return Config()

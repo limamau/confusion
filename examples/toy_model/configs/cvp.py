@@ -131,7 +131,3 @@ class Config:
             self.const_matrix,
             self.y,
         )
-
-
-def get_config() -> Config:
-    return Config()

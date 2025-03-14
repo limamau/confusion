@@ -43,7 +43,7 @@ def single_loss_fn(
     key: Key,
 ) -> Array:
     noise_key, dropout_key = jr.split(key)
-    mean, std = model.perturbation(x0, t, key=noise_key)
+    mean, std = model.perturbation(x0, t)
     # clip std to avoid division by zero
     std = jnp.maximum(std, 1e-5)
     noise = jr.normal(key, x0.shape)
