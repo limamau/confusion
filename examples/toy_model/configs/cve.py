@@ -50,14 +50,13 @@ class Config:
 
     # 4. diffusion model
     t0 = 0.1
+    t1 = 3.0
     sigma_min = 0.1
     sigma_max = 0.12
     is_approximate = False
-
-    @staticmethod
-    def weight_fn(t):
-        return Config.sigma_min * jnp.pow((Config.sigma_max / Config.sigma_min), 2 * t)
-
+    weight_fn = lambda t: Config.sigma_min * jnp.pow(
+        (Config.sigma_max / Config.sigma_min), 2 * t
+    )
     model = VarianceExploding(
         network,
         weight_fn,

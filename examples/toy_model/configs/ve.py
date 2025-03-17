@@ -5,7 +5,7 @@ import jax.random as jr
 import optax
 
 from confusion.diffusion import VarianceExploding
-from confusion.guidance import ManifoldGuidance, MomentMatchingGuidance
+from confusion.guidance import MomentMatchingGuidance
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ODESampler
 
@@ -38,14 +38,13 @@ class Config:
 
     # 4. diffusion model
     t0 = 0.1
+    t1 = t1
     sigma_min = 0.1
     sigma_max = 0.12
     is_approximate = False
-
-    @staticmethod
-    def weight_fn(t):
-        return Config.sigma_min * jnp.pow((Config.sigma_max / Config.sigma_min), 2 * t)
-
+    weight_fn = lambda t: Config.sigma_min * jnp.pow(
+        (Config.sigma_max / Config.sigma_min), 2 * t
+    )
     model = VarianceExploding(
         network,
         weight_fn,
@@ -85,11 +84,4 @@ class Config:
     moment_matching_guidance = MomentMatchingGuidance(
         const_matrix,
         moment_matching_y,
-    )
-    # 8.2 manifold
-    mask = jnp.array([False, True, False])
-    manifold_y = jnp.array([0.0, do_B, 0.0])
-    manifold_guidance = ManifoldGuidance(
-        mask,
-        manifold_y,
     )

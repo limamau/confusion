@@ -38,15 +38,9 @@ class Config:
 
     # 4. diffusion model
     t0 = 0.1
-
-    @staticmethod
-    def int_beta_fn(t):
-        return t
-
-    @staticmethod
-    def weight_fn(t):
-        return 1 - jnp.exp(-Config.int_beta_fn(t))
-
+    t1 = t1
+    int_beta_fn = lambda t: t
+    weight_fn = lambda t: 1 - jnp.exp(-Config.int_beta_fn(t))
     model = VariancePreserving(
         network,
         weight_fn,

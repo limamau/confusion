@@ -26,7 +26,7 @@ def main(args):
     conds = config.conds
     sampler = config.sampler
     do_B = config.do_B
-    guidance = config.guidance
+    guidance = config.moment_matching_guidance
 
     # generate samples
     key = jr.PRNGKey(seed)

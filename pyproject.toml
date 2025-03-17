@@ -18,4 +18,4 @@ dependencies = [
 ]
 
 [tool.ruff.lint]
-ignore = ["F722"]
+ignore = ["E731", "F722"]
