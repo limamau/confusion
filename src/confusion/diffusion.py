@@ -2,7 +2,6 @@ from abc import abstractmethod
 from typing import Callable, Optional, Tuple
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Key
 
@@ -64,37 +63,50 @@ class AbstractDiffusionModel(eqx.Module):
 
 
 class VariancePreserving(AbstractDiffusionModel):
-    int_beta_fn: Callable
+    beta_min_bar: float
+    beta_max_bar: float
 
     def __init__(
         self,
         network: AbstractNetwork,
-        int_beta_fn: Callable,
-        weights_fn: Callable,
+        weights2_fn: Callable,
+        beta_min_bar: float,
+        beta_max_bar: float,
     ):
         self.network = network
-        self.weights2_fn = weights_fn
-        self.int_beta_fn = int_beta_fn
+        self.weights2_fn = weights2_fn
+        self.beta_min_bar = beta_min_bar
+        self.beta_max_bar = beta_max_bar
 
     def s(self, t: Array) -> Array:
-        return jnp.exp(-0.5 * self.int_beta_fn(t))
+        return jnp.exp(
+            -0.25 * t**2 * (self.beta_max_bar - self.beta_min_bar)
+            - 0.5 * t * self.beta_min_bar
+        )
 
     def sigma(self, t: Array) -> Array:
-        return jnp.sqrt(1 - jnp.exp(-self.int_beta_fn(t)))
+        return jnp.sqrt(
+            1
+            - jnp.exp(
+                -0.5 * t**2 * (self.beta_max_bar - self.beta_min_bar)
+                - t * self.beta_min_bar
+            )
+        )
 
-    # limamau: complete that (currently just bypassing somethign nonsense)
     def t(self, sigma: Array) -> Array:
-        return jnp.log(1 - jnp.square(sigma))
+        return (
+            jnp.sqrt(
+                self.beta_min_bar**2
+                - 2 * (self.beta_max_bar - self.beta_min_bar) * jnp.log(1 - sigma**2)
+            )
+            - self.beta_min_bar
+        ) / (self.beta_max_bar - self.beta_min_bar)
 
     def diffusion(self, t: Array) -> Array:
-        # get beta by derivating the integral
-        _, beta = jax.jvp(self.int_beta_fn, (t,), (jnp.ones_like(t),))
-        return jnp.sqrt(beta)
+        return jnp.sqrt(self.beta_max_bar + t * (self.beta_max_bar - self.beta_min_bar))
 
     def drift(self, x: Array, t: Array) -> Array:
-        # same here
-        _, beta = jax.jvp(self.int_beta_fn, (t,), (jnp.ones_like(t),))
-        return -0.5 * beta * x
+        return -0.5 * (self.beta_min_bar + t * (self.beta_max_bar - self.beta_min_bar))
 
     def score(
         self,
@@ -116,13 +128,13 @@ class VarianceExploding(AbstractDiffusionModel):
     def __init__(
         self,
         network: AbstractNetwork,
-        weights_fn: Callable,
+        weights2_fn: Callable,
         sigma_min: float,
         sigma_max: float,
         is_approximate: bool = True,
     ):
         self.network = network
-        self.weights2_fn = weights_fn
+        self.weights2_fn = weights2_fn
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
 

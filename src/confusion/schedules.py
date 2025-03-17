@@ -22,7 +22,6 @@ def get_edm_sampling_ts(
     )
 
     ts = jnp.array([model.t(sigma_i) for sigma_i in sigmas])
-    ts = jnp.abs(ts)  # limamau: why do we have to do this for vp?
     ts = jnp.clip(ts, t0, t1)
 
     return ts

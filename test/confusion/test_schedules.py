@@ -12,6 +12,8 @@ def main():
     SEED = 5678
     SIGMA_MIN = 0.1
     SIGMA_MAX = 0.5
+    BETA_MIN_BAR = 0.1
+    BETA_MAX_BAR = 1.0
     RHO = 7
     N = 10
     T0 = 0.1
@@ -32,13 +34,11 @@ def main():
         SIGMA_MAX,
     )
 
-    def int_beta_fn(t):
-        return t
-
     vp = VariancePreserving(
         network,
         dummy_weight_fn,
-        int_beta_fn,
+        BETA_MIN_BAR,
+        BETA_MAX_BAR,
     )
 
     # test ts function

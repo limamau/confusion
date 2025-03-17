@@ -1,5 +1,6 @@
 import os
 
+import diffrax as dfx
 import jax.numpy as jnp
 import jax.random as jr
 import optax
@@ -8,6 +9,11 @@ from confusion.diffusion import VarianceExploding
 from confusion.guidance import MomentMatchingGuidance
 from confusion.networks import CausalMultiLayerPerceptron
 from confusion.sampling import ODESampler
+from confusion.schedules import get_edm_sampling_ts
+
+
+def get_weight2_fn(sigma_min, sigma_max):
+    return lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), 2 * t)
 
 
 class Config:
@@ -52,9 +58,7 @@ class Config:
     sigma_min = 0.1
     sigma_max = 0.12
     is_approximate = False
-    weight_fn = lambda t: Config.sigma_min * jnp.pow(
-        (Config.sigma_max / Config.sigma_min), 2 * t
-    )
+    weight_fn = get_weight2_fn(sigma_min, sigma_max)
     model = VarianceExploding(
         network,
         weight_fn,
@@ -81,7 +85,13 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t0=t0, t1=t1)
+    std_sampler = ODESampler(dt0, t0=t0, t1=t1)
+    N = 500
+    ts = get_edm_sampling_ts(model, N=N, t1=t1, t0=t0)
+    step_size_controller = dfx.StepTo(ts)
+    edm_sampler = ODESampler(
+        None, t0=t0, t1=t1, solver=dfx.Heun(), step_size_controller=step_size_controller
+    )
 
     # 8. guidance
     do_B = 1.0

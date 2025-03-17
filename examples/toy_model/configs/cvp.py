@@ -1,5 +1,6 @@
 import os
 
+import diffrax as dfx
 import jax.numpy as jnp
 import jax.random as jr
 import optax
@@ -8,6 +9,17 @@ from confusion.diffusion import VariancePreserving
 from confusion.guidance import MomentMatchingGuidance
 from confusion.networks import CausalMultiLayerPerceptron
 from confusion.sampling import ODESampler
+from confusion.schedules import get_edm_sampling_ts
+
+
+def get_int_beta_fn():
+    return lambda t: t
+
+
+def get_weight2_fn(beta_min_bar, beta_max_bar):
+    return lambda t: 1 - jnp.exp(
+        -0.5 * t**2 * (beta_max_bar - beta_min_bar) - t * beta_min_bar
+    )
 
 
 class Config:
@@ -49,12 +61,14 @@ class Config:
     # 4. diffusion model
     t0 = 0.1
     t1 = 3.0
-    int_beta_fn = lambda t: t
-    weight_fn = lambda t: 1 - jnp.exp(-Config.int_beta_fn(t))
+    beta_min_bar = 0.1
+    beta_max_bar = 0.12
+    weight2_fn = get_weight2_fn(beta_min_bar, beta_max_bar)
     model = VariancePreserving(
         network,
-        weight_fn,
-        int_beta_fn,
+        weight2_fn,
+        beta_min_bar,
+        beta_max_bar,
     )
 
     # 5. optimization
@@ -76,7 +90,13 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t0=t0, t1=t1)
+    std_sampler = ODESampler(dt0, t0=t0, t1=t1)
+    N = 500
+    ts = get_edm_sampling_ts(model, N=N, t1=t1, t0=t0)
+    step_size_controller = dfx.StepTo(ts)
+    edm_sampler = ODESampler(
+        None, t0=t0, t1=t1, solver=dfx.Heun(), step_size_controller=step_size_controller
+    )
 
     # 8. guidance
     do_B = 1.0
