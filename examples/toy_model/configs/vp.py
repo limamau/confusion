@@ -1,5 +1,6 @@
 import os
 
+import diffrax as dfx
 import jax.numpy as jnp
 import jax.random as jr
 import optax
@@ -8,6 +9,7 @@ from confusion.diffusion import VariancePreserving
 from confusion.guidance import MomentMatchingGuidance
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ODESampler
+from confusion.schedules import get_edm_sampling_ts
 
 
 class Config:
@@ -38,7 +40,8 @@ class Config:
     t0 = 0.1
     t1 = 3.0
     int_beta_fn = lambda t: t
-    weight_fn = lambda t: 1 - jnp.exp(-Config.int_beta_fn(t))
+    # weight_fn = lambda t: 1 - jnp.exp(-Config.int_beta_fn(t))
+    weight_fn = lambda t: t
     model = VariancePreserving(
         network,
         weight_fn,
@@ -64,7 +67,10 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t0=t0, t1=t1)
+    N = 500
+    ts = get_edm_sampling_ts(model, N=N, t1=t1, t0=t0)
+    step_size_controller = dfx.StepTo(ts)
+    sampler = ODESampler(None, t0=t0, t1=t1, step_size_controller=step_size_controller)
 
     # 8. guidance
     do_B = 1.0

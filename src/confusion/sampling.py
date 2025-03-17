@@ -16,7 +16,7 @@ from .guidance import AbstractGuidance, GuidanceFree
 
 # samplers #
 class AbstractSampler:
-    dt0: float
+    dt0: Optional[float]
     t0: float
     t1: float
     solver: AbstractSolver
@@ -24,7 +24,7 @@ class AbstractSampler:
 
     def __init__(
         self,
-        dt0: float,
+        dt0: Optional[float],
         solver: AbstractSolver,
         t0: float = 1e-3,
         t1: float = 1.0,
@@ -72,7 +72,7 @@ class AbstractSampler:
 class ODESampler(AbstractSampler):
     def __init__(
         self,
-        dt0: float,
+        dt0: Optional[float],
         solver: AbstractSolver = dfx.Tsit5(),
         t0: float = 1e-3,
         t1: float = 1.0,
@@ -96,14 +96,16 @@ class ODESampler(AbstractSampler):
             return f - 0.5 * g2 * score
 
         term = dfx.ODETerm(fun)
-        x1 = jr.normal(key, data_shape)
+
         # solve from t1 to t0
+        x1 = jr.normal(key, data_shape)
+        dt0 = -self.dt0 if self.dt0 is not None else None
         sol = dfx.diffeqsolve(
             term,
             self.solver,
             self.t1,
             self.t0,
-            -self.dt0,
+            dt0,
             x1,
             stepsize_controller=self.stepsize_controller,
         )
@@ -115,7 +117,7 @@ class ODESampler(AbstractSampler):
 class SDESampler(AbstractSampler):
     def __init__(
         self,
-        dt0: float,
+        dt0: Optional[float],
         solver: AbstractSolver = dfx.Euler(),
         t0: float = 1e-3,
         t1: float = 1.0,
@@ -143,18 +145,20 @@ class SDESampler(AbstractSampler):
             return model.diffusion(t)
 
         keys = jr.split(key, 2)
-        bm = dfx.VirtualBrownianTree(self.t0, 1.0, tol=self.dt0, shape=(), key=keys[0])
+        bm = dfx.VirtualBrownianTree(self.t0, 1.0, tol=1e-3, shape=(), key=keys[0])
         terms = dfx.MultiTerm(
             dfx.ODETerm(back_drift), dfx.ControlTerm(back_diffusion, bm)
         )
-        x1 = jr.normal(keys[1], data_shape)
+
         # solve from t1=1.0 to t0=t0
+        x1 = jr.normal(keys[1], data_shape)
+        back_dt0 = -self.dt0 if self.dt0 is not None else None
         sol = dfx.diffeqsolve(
             terms,
             solver,
             self.t1,
             self.t0,
-            -self.dt0,
+            back_dt0,
             x1,
             stepsize_controller=self.stepsize_controller,
         )
