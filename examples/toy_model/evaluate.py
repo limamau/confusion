@@ -26,7 +26,7 @@ def main(args):
     conds = config.conds
     sampler = config.sampler
     do_B = config.do_B
-    guidance = config.moment_matching_guidance
+    moment_matching_guidance = config.moment_matching_guidance
 
     # generate samples
     key = jr.PRNGKey(seed)
@@ -44,31 +44,39 @@ def main(args):
     # restore
     model, _ = ckpter.restore(model, opt)
 
+    # some constanst for plotting
+    FIGSIZE = (3, 2)
+    DPI = 200
+    BINS = 20
+    ALPHA = 0.5
+    XLIM = (-6, 6)
+    YLIM = (0, 200)
+
     # no intervention - reference
-    plt.figure(figsize=(3, 2), dpi=200)
+    plt.figure(figsize=FIGSIZE, dpi=DPI)
     ref_A, ref_B, ref_C = get_joint(sample_size, key)
     print("No intervention - reference")
     print_mean_and_variance(ref_A, ref_B, ref_C)
-    plt.hist(ref_A.flatten(), bins=20, alpha=0.5, label="A")
-    plt.hist(ref_B.flatten(), bins=20, alpha=0.5, label="B")
-    plt.hist(ref_C.flatten(), bins=20, alpha=0.5, label="C")
+    plt.hist(ref_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
+    plt.hist(ref_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
+    plt.hist(ref_C.flatten(), bins=BINS, alpha=ALPHA, label="C")
     plt.title("No Intervention - reference")
-    plt.xlim(-5, 5)
-    plt.ylim(0, 200)
+    plt.xlim(*XLIM)
+    plt.ylim(*YLIM)
     plt.legend()
     plt.show()
 
     # do(B) intervention - reference
-    plt.figure(figsize=(3, 2), dpi=200)
+    plt.figure(figsize=FIGSIZE, dpi=DPI)
     ref_A, ref_B, ref_C = get_joint(sample_size, key, do_B=do_B)
     print("Do(B={}) - reference".format(do_B))
     print_mean_and_variance(ref_A, ref_B, ref_C)
-    plt.hist(ref_A.flatten(), bins=20, alpha=0.5, label="A")
-    plt.hist(ref_B.flatten(), bins=20, alpha=0.5, label="B")
-    plt.hist(ref_C.flatten(), bins=20, alpha=0.5, label="C")
+    plt.hist(ref_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
+    plt.hist(ref_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
+    plt.hist(ref_C.flatten(), bins=BINS, alpha=ALPHA, label="C")
     plt.title("Do(B={}) - reference".format(do_B))
-    plt.xlim(-5, 5)
-    plt.ylim(0, 200)
+    plt.xlim(*XLIM)
+    plt.ylim(*YLIM)
     plt.legend()
     plt.show()
 
@@ -89,13 +97,13 @@ def main(args):
     print("No intervention - {}".format(name.upper()))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B, gen_C)
-    plt.figure(figsize=(3, 2), dpi=200)
-    plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
-    plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
-    plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
+    plt.figure(figsize=FIGSIZE, dpi=DPI)
+    plt.hist(gen_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
+    plt.hist(gen_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
+    plt.hist(gen_C.flatten(), bins=BINS, alpha=ALPHA, label="C")
     plt.title("No Intervention - {}".format(name.upper()))
-    plt.xlim(-5, 5)
-    plt.ylim(0, 200)
+    plt.xlim(*XLIM)
+    plt.ylim(*YLIM)
     plt.legend()
     plt.show()
 
@@ -110,20 +118,20 @@ def main(args):
         ref_samples_mean,
         ref_samples_std,
         sample_size,
-        guidance=guidance,
+        guidance=moment_matching_guidance,
     )
     end_time = time.time()
     gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
     print("Do(B={}) - {}".format(do_B, name.upper()))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B, gen_C)
-    plt.figure(figsize=(3, 2), dpi=200)
-    plt.hist(gen_A.flatten(), bins=20, alpha=0.5, label="A")
-    plt.hist(gen_B.flatten(), bins=20, alpha=0.5, label="B")
-    plt.hist(gen_C.flatten(), bins=20, alpha=0.5, label="C")
+    plt.figure(figsize=FIGSIZE, dpi=DPI)
+    plt.hist(gen_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
+    plt.hist(gen_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
+    plt.hist(gen_C.flatten(), bins=BINS, alpha=ALPHA, label="C")
     plt.title("Do(B={}) - {}".format(do_B, name.upper()))
-    plt.xlim(-5, 5)
-    plt.ylim(0, 200)
+    plt.xlim(*XLIM)
+    plt.ylim(*YLIM)
     plt.legend()
     plt.show()
 

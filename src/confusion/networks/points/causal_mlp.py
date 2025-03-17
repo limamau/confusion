@@ -78,7 +78,6 @@ class CausalMultiLayerPerceptron(AbstractCausalNetwork):
         hidden_dim: int,
         temb_dim: int,
         projection_scale: float,
-        t1: float,
         causal_mask: Bool[Array, "..."],
         num_heads: int,
         qkv_size: int,

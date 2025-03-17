@@ -27,18 +27,16 @@ class Config:
     num_variables = 3
     hidden_size = 256
     is_conditional = False
-    t1 = 3.0
     network = MultiLayerPerceptron(
         num_variables,
         hidden_size,
-        t1,
         key=net_key,
         is_conditional=is_conditional,
     )
 
     # 4. diffusion model
     t0 = 0.1
-    t1 = t1
+    t1 = 3.0
     sigma_min = 0.1
     sigma_max = 0.12
     is_approximate = False
@@ -48,8 +46,6 @@ class Config:
     model = VarianceExploding(
         network,
         weight_fn,
-        t0,
-        t1,
         sigma_min,
         sigma_max,
         is_approximate=is_approximate,
@@ -74,7 +70,7 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t1)
+    sampler = ODESampler(dt0, t0=t0, t1=t1)
 
     # 8. guidance
     do_B = 1.0

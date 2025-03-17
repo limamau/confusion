@@ -29,7 +29,6 @@ class Config:
     hidden_dim = 256
     temb_dim = 2
     projection_scale = 1.0
-    t1 = 3.0
     num_heads = 1
     qkv_size = 8
     is_conditional = False
@@ -40,7 +39,6 @@ class Config:
         hidden_dim=hidden_dim,
         temb_dim=temb_dim,
         projection_scale=projection_scale,
-        t1=t1,
         causal_mask=causal_mask,
         num_heads=num_heads,
         qkv_size=qkv_size,
@@ -60,11 +58,8 @@ class Config:
     model = VarianceExploding(
         network,
         weight_fn,
-        t0,
-        t1,
         sigma_min,
         sigma_max,
-        is_approximate=is_approximate,
     )
 
     # 5. optimization
@@ -86,7 +81,7 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t1)
+    sampler = ODESampler(dt0, t0=t0, t1=t1)
 
     # 8. guidance
     do_B = 1.0

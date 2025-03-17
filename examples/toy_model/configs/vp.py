@@ -27,25 +27,21 @@ class Config:
     num_variables = 3
     hidden_size = 256
     is_conditional = False
-    t1 = 3.0
     network = MultiLayerPerceptron(
         num_variables,
         hidden_size,
-        t1,
         key=net_key,
         is_conditional=is_conditional,
     )
 
     # 4. diffusion model
     t0 = 0.1
-    t1 = t1
+    t1 = 3.0
     int_beta_fn = lambda t: t
     weight_fn = lambda t: 1 - jnp.exp(-Config.int_beta_fn(t))
     model = VariancePreserving(
         network,
         weight_fn,
-        t0,
-        t1,
         int_beta_fn,
     )
 
@@ -68,7 +64,7 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t1)
+    sampler = ODESampler(dt0, t0=t0, t1=t1)
 
     # 8. guidance
     do_B = 1.0

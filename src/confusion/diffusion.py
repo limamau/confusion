@@ -11,9 +11,7 @@ from .networks import AbstractNetwork
 
 class AbstractDiffusionModel(eqx.Module):
     network: AbstractNetwork
-    weights_fn: Callable
-    t0: float
-    t1: float
+    weights2_fn: Callable
 
     @abstractmethod
     def s(self, t: Array) -> Array:
@@ -23,7 +21,17 @@ class AbstractDiffusionModel(eqx.Module):
     def sigma(self, t: Array) -> Array:
         raise NotImplementedError
 
-    # in practice, it is probably better to override this method
+    # the following should be the inverse of sigma(t)
+    # but I found no straight forward way to do this
+    # automatically from sigma(t) using jax so it'll
+    # stay as an abstract method which has to be implemented
+    # in all instances of this class for now;
+    # this is supposed to be used by the EDMStepSizeController
+    @abstractmethod
+    def t(self, sigma: Array) -> Array:
+        raise NotImplementedError
+
+    # in practice, it's probably better to override this method
     # in order to provide a more efficient implementation
     def diffusion(self, t: Array) -> Array:
         s_t = self.s(t)
@@ -62,14 +70,10 @@ class VariancePreserving(AbstractDiffusionModel):
         self,
         network: AbstractNetwork,
         int_beta_fn: Callable,
-        t0: float,
-        t1: float,
         weights_fn: Callable,
     ):
         self.network = network
-        self.weights_fn = weights_fn
-        self.t0 = t0
-        self.t1 = t1
+        self.weights2_fn = weights_fn
         self.int_beta_fn = int_beta_fn
 
     def s(self, t: Array) -> Array:
@@ -77,6 +81,10 @@ class VariancePreserving(AbstractDiffusionModel):
 
     def sigma(self, t: Array) -> Array:
         return jnp.sqrt(1 - jnp.exp(-self.int_beta_fn(t)))
+
+    # limamau: complete that (currently just bypassing somethign nonsense)
+    def t(self, sigma: Array) -> Array:
+        return jnp.log(1 - jnp.square(sigma))
 
     def diffusion(self, t: Array) -> Array:
         # get beta by derivating the integral
@@ -100,32 +108,37 @@ class VariancePreserving(AbstractDiffusionModel):
 
 
 class VarianceExploding(AbstractDiffusionModel):
-    sigma_fn: Callable
     sigma_min: float
     sigma_max: float
+    sigma_fn: Callable
+    t_fn: Callable
 
     def __init__(
         self,
         network: AbstractNetwork,
         weights_fn: Callable,
-        t0: float,
-        t1: float,
         sigma_min: float,
         sigma_max: float,
         is_approximate: bool = True,
     ):
         self.network = network
-        self.weights_fn = weights_fn
-        self.t0 = t0
-        self.t1 = t1
+        self.weights2_fn = weights_fn
         self.sigma_min = sigma_min
         self.sigma_max = sigma_max
+
         # this is a good approximation for sigma_max >> sigma_min
         if is_approximate:
             self.sigma_fn = lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), t)
+            self.t_fn = lambda sigma: jnp.log(sigma / sigma_min) / jnp.log(
+                sigma_max / sigma_min
+            )
         else:
             self.sigma_fn = lambda t: sigma_min * jnp.sqrt(
-                jnp.exp(jnp.log(sigma_max / sigma_min) * t) - 1
+                jnp.pow(sigma_max / sigma_min, 2 * t)
+                - 1  # somehow using t instead of 2*t leads to better results on do
+            )
+            self.t_fn = lambda sigma: jnp.log(sigma**2 / sigma_min**2 + 1) / (
+                2 * jnp.log(sigma_max / sigma_min)
             )
 
     def s(self, t: Array) -> Array:
@@ -133,6 +146,9 @@ class VarianceExploding(AbstractDiffusionModel):
 
     def sigma(self, t: Array) -> Array:
         return self.sigma_fn(t)
+
+    def t(self, sigma: Array) -> Array:
+        return self.t_fn(sigma)
 
     def diffusion(self, t: Array) -> Array:
         log_ratio = jnp.sqrt(2 * jnp.log(self.sigma_max / self.sigma_min))
@@ -147,6 +163,6 @@ class VarianceExploding(AbstractDiffusionModel):
         t: Array,
         c: Optional[Array],
         *,
-        key: Key | None = None,
+        key: Optional[Key] = None,
     ) -> Array:
         return self.network(x, t, c, key=key)

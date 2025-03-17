@@ -24,6 +24,8 @@ def main(args):
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     train_key = config.train_key
+    t0 = config.t0
+    t1 = config.t1
 
     # generate samples
     key = jr.PRNGKey(seed)
@@ -51,6 +53,8 @@ def main(args):
         ckpter,
         train_key,
         None,
+        t0=t0,
+        t1=t1,
     )
 
 

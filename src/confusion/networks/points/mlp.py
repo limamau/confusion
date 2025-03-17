@@ -22,7 +22,6 @@ class MultiLayerPerceptron(AbstractNaiveNetwork):
         self,
         num_variables: int,
         hidden_size: int,
-        t1: float,
         *,
         key: Key,
         is_conditional: bool = False,

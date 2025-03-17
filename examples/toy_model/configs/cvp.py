@@ -32,7 +32,6 @@ class Config:
     num_heads = 1
     qkv_size = 8
     is_conditional = False
-    t1 = 3.0
     causal_mask = jnp.ones((num_variables, num_variables), dtype=bool)
     network = CausalMultiLayerPerceptron(
         num_blocks=num_blocks,
@@ -40,7 +39,6 @@ class Config:
         hidden_dim=hidden_dim,
         temb_dim=temb_dim,
         projection_scale=projection_scale,
-        t1=t1,
         causal_mask=causal_mask,
         num_heads=num_heads,
         qkv_size=qkv_size,
@@ -56,8 +54,6 @@ class Config:
     model = VariancePreserving(
         network,
         weight_fn,
-        t0,
-        t1,
         int_beta_fn,
     )
 
@@ -80,7 +76,7 @@ class Config:
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    sampler = ODESampler(dt0, t1)
+    sampler = ODESampler(dt0, t0=t0, t1=t1)
 
     # 8. guidance
     do_B = 1.0

@@ -6,7 +6,7 @@ import diffrax as dfx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from diffrax import AbstractSolver
+from diffrax import AbstractSolver, AbstractStepSizeController
 from equinox import filter_jit
 from jaxtyping import Array, Key
 
@@ -14,7 +14,28 @@ from .diffusion import AbstractDiffusionModel
 from .guidance import AbstractGuidance, GuidanceFree
 
 
+# samplers #
 class AbstractSampler:
+    dt0: float
+    t0: float
+    t1: float
+    solver: AbstractSolver
+    stepsize_controller: AbstractStepSizeController
+
+    def __init__(
+        self,
+        dt0: float,
+        solver: AbstractSolver,
+        t0: float = 1e-3,
+        t1: float = 1.0,
+        stepsize_controller: AbstractStepSizeController = dfx.ConstantStepSize(),
+    ):
+        self.dt0 = dt0
+        self.solver = solver
+        self.t0 = t0
+        self.t1 = t1
+        self.stepsize_controller = stepsize_controller
+
     @abstractmethod
     def single_sample(
         self,
@@ -49,14 +70,15 @@ class AbstractSampler:
 
 
 class ODESampler(AbstractSampler):
-    dt0: float
-    t1: float
-    solver: AbstractSolver
-
-    def __init__(self, dt0: float, t1: float, solver: AbstractSolver = dfx.Tsit5()):
-        self.dt0 = dt0
-        self.t1 = t1
-        self.solver = solver
+    def __init__(
+        self,
+        dt0: float,
+        solver: AbstractSolver = dfx.Tsit5(),
+        t0: float = 1e-3,
+        t1: float = 1.0,
+        step_size_controller: AbstractStepSizeController = dfx.ConstantStepSize(),
+    ):
+        super().__init__(dt0, solver, t0, t1, step_size_controller)
 
     @filter_jit
     def single_sample(
@@ -74,24 +96,32 @@ class ODESampler(AbstractSampler):
             return f - 0.5 * g2 * score
 
         term = dfx.ODETerm(fun)
-        t0 = model.t0
         x1 = jr.normal(key, data_shape)
         # solve from t1 to t0
-        sol = dfx.diffeqsolve(term, self.solver, self.t1, t0, -self.dt0, x1)
+        sol = dfx.diffeqsolve(
+            term,
+            self.solver,
+            self.t1,
+            self.t0,
+            -self.dt0,
+            x1,
+            stepsize_controller=self.stepsize_controller,
+        )
 
         assert sol.ys is not None
         return sol.ys[0]
 
 
 class SDESampler(AbstractSampler):
-    dt0: float
-    t1: float
-    solver: AbstractSolver
-
-    def __init__(self, dt0: float, t1: float, solver: AbstractSolver = dfx.Euler()):
-        self.dt0 = dt0
-        self.t1 = t1
-        self.solver = solver
+    def __init__(
+        self,
+        dt0: float,
+        solver: AbstractSolver = dfx.Euler(),
+        t0: float = 1e-3,
+        t1: float = 1.0,
+        step_size_controller: AbstractStepSizeController = dfx.ConstantStepSize(),
+    ):
+        super().__init__(dt0, solver, t0, t1, step_size_controller)
 
     @filter_jit
     def single_sample(
@@ -113,14 +143,21 @@ class SDESampler(AbstractSampler):
             return model.diffusion(t)
 
         keys = jr.split(key, 2)
-        t0 = model.t0
-        bm = dfx.VirtualBrownianTree(t0, self.t1, tol=self.dt0, shape=(), key=keys[0])
+        bm = dfx.VirtualBrownianTree(self.t0, 1.0, tol=self.dt0, shape=(), key=keys[0])
         terms = dfx.MultiTerm(
             dfx.ODETerm(back_drift), dfx.ControlTerm(back_diffusion, bm)
         )
         x1 = jr.normal(keys[1], data_shape)
-        # solve from t1 to t0
-        sol = dfx.diffeqsolve(terms, solver, self.t1, t0, -self.dt0, x1)
+        # solve from t1=1.0 to t0=t0
+        sol = dfx.diffeqsolve(
+            terms,
+            solver,
+            self.t1,
+            self.t0,
+            -self.dt0,
+            x1,
+            stepsize_controller=self.stepsize_controller,
+        )
 
         assert sol.ys is not None
         return sol.ys[0]

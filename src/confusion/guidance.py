@@ -90,7 +90,32 @@ class MomentMatchingGuidance(AbstractGuidance):
         return eqx.filter_grad(logpdf)(x) + model.score(x, t, c, key=key)
 
 
-# limamau: create a ManifoldGuidance class by switching the score to (y + mean) * std
-# for the values that should be inferred during guidance - maybe use a list of bools
-# to encode that and y should be a tuple of arrays with the same dimension as the number
-# of true values
+class ManifoldGuidance:
+    mask: Array
+    y: Array
+
+    def __init__(self, mask: ArrayLike, y: ArrayLike):
+        self.mask = jnp.asarray(mask)
+        self.y = jnp.asarray(y)
+
+    def apply(
+        self,
+        model: AbstractDiffusionModel,
+        x: Array,
+        t: Array,
+        c: Optional[Array],
+        *,
+        key: Optional[Key] = None,
+    ) -> Array:
+        # original score
+        original_score = model.score(x, t, c, key=key)
+
+        # perturbation of reference values
+        # to the same noise level at t
+        mean, std = model.perturbation(self.y, t)
+        perturbed_y = mean + self.y * std
+
+        # change values on score according to mask
+        modified_score = jnp.where(self.mask, perturbed_y, original_score)
+
+        return modified_score
