@@ -1,4 +1,5 @@
-from typing import Optional
+import os
+from typing import Optional, Tuple
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -6,17 +7,84 @@ import matplotlib.pyplot as plt
 from jaxtyping import Array, Key
 
 
-def print_mean_and_variance(samples_A: Array, samples_B: Array, samples_C: Array):
-    mean_A = jnp.mean(samples_A)
-    std_A = jnp.std(samples_A)
-    mean_B = jnp.mean(samples_B)
-    std_B = jnp.std(samples_B)
-    mean_C = jnp.mean(samples_C)
-    std_C = jnp.std(samples_C)
-    print(f"A: mean={mean_A:.2f}, std={std_A:.2f}")
-    print(f"B: mean={mean_B:.2f}, std={std_B:.2f}")
-    print(f"C: mean={mean_C:.2f}, std={std_C:.2f}")
-    print()
+def get_file_name(figs_dir: str, title: str) -> str:
+    return os.path.join(figs_dir, title.replace(" ", "").replace(",", "_") + ".png")
+
+
+def plot_samples(
+    title: str,
+    sam_A: Array,
+    sam_B: Array,
+    sam_C: Array,
+    figs_dir: str,
+    bins: int = 20,
+    alpha: float = 0.5,
+    xlim: Tuple[int, int] = (-6, 6),
+    ylim: Tuple[int, int] = (0, 200),
+    figsize: Tuple[float, float] = (4, 2.5),
+    dpi: int = 200,
+    is_showing: bool = True,
+    is_saving: bool = True,
+    show_stats: bool = True,
+    print_stats: bool = True,
+    sampling_time: Optional[float] = None,
+) -> None:
+    # stats
+    mean_A = jnp.mean(sam_A)
+    std_A = jnp.std(sam_A)
+    mean_B = jnp.mean(sam_B)
+    std_B = jnp.std(sam_B)
+    mean_C = jnp.mean(sam_C)
+    std_C = jnp.std(sam_C)
+
+    # prints
+    if print_stats or sampling_time is not None:
+        print(title)
+        if sampling_time is not None:
+            print("Sampling time: {:.2f} seconds".format(sampling_time))
+        if print_stats:
+            print(f"A: mean={mean_A:.2f}, std={std_A:.2f}")
+            print(f"B: mean={mean_B:.2f}, std={std_B:.2f}")
+            print(f"C: mean={mean_C:.2f}, std={std_C:.2f}")
+        print()
+
+    # plot
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    plt.hist(sam_A.flatten(), bins=bins, alpha=alpha, label="A")
+    plt.hist(sam_B.flatten(), bins=bins, alpha=alpha, label="B")
+    plt.hist(sam_C.flatten(), bins=bins, alpha=alpha, label="C")
+    plt.title(title)
+    plt.xlim(*xlim)
+    plt.ylim(*ylim)
+    plt.legend()
+
+    # add stats to plot
+    if show_stats:
+        stats_text = f"A: μ={mean_A:.2f}, σ={std_A:.2f}\n"
+        stats_text += f"B: μ={mean_B:.2f}, σ={std_B:.2f}\n"
+        stats_text += f"C: μ={mean_C:.2f}, σ={std_C:.2f}"
+
+        if sampling_time is not None:
+            stats_text = stats_text + f"\nsamp. time: {sampling_time:.1f}s"
+
+        plt.annotate(
+            stats_text,
+            xy=(0.03, 0.95),
+            xycoords="axes fraction",
+            va="top",
+            fontsize=9,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.2),
+        )
+
+    # show/save plot
+    if is_showing:
+        plt.show()
+
+    if is_saving:
+        file_name = get_file_name(figs_dir, title)
+        fig.savefig(file_name)
+
+    plt.close()
 
 
 def get_joint(
@@ -49,7 +117,6 @@ def main():
     # no intervention
     key = jr.PRNGKey(SEED)
     samples_A, samples_B, samples_C = get_joint(NUM_SAMPLES, key)
-    print_mean_and_variance(samples_A, samples_B, samples_C)
     plt.hist(samples_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(samples_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(samples_C.flatten(), bins=20, alpha=0.5, label="C")
@@ -59,7 +126,6 @@ def main():
 
     # do(B) intervention
     samples_A, samples_B, samples_C = get_joint(NUM_SAMPLES, key, do_B=DO_B)
-    print_mean_and_variance(samples_A, samples_B, samples_C)
     plt.hist(samples_A.flatten(), bins=20, alpha=0.5, label="A")
     plt.hist(samples_B.flatten(), bins=20, alpha=0.5, label="B")
     plt.hist(samples_C.flatten(), bins=20, alpha=0.5, label="C")

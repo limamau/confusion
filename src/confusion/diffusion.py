@@ -146,9 +146,8 @@ class VarianceExploding(AbstractDiffusionModel):
             )
         else:
             self.sigma_fn = lambda t: sigma_min * jnp.sqrt(
-                jnp.pow(sigma_max / sigma_min, 2 * t)
-                - 1  # somehow using t instead of 2*t leads to better results on do
-            )
+                jnp.pow(sigma_max / sigma_min, 2 * t) - 1
+            )  # limamau: somehow using t instead of 2t leads to better results...
             self.t_fn = lambda sigma: jnp.log(sigma**2 / sigma_min**2 + 1) / (
                 2 * jnp.log(sigma_max / sigma_min)
             )

@@ -6,9 +6,9 @@ import jax.random as jr
 import optax
 
 from confusion.diffusion import VarianceExploding
-from confusion.guidance import MomentMatchingGuidance
+from confusion.guidance import GuidanceFree, ManifoldGuidance, MomentMatchingGuidance
 from confusion.networks import CausalMultiLayerPerceptron
-from confusion.sampling import ODESampler
+from confusion.sampling import EulerMaruyamaSampler, ODESampler
 from confusion.schedules import get_edm_sampling_ts
 
 
@@ -82,22 +82,31 @@ class Config:
     )
 
     # 7. sampling
+    # 7.1 Euler-Maruyama sampler
     dt0 = 0.01
     sample_size = 1000
     conds = None
-    std_sampler = ODESampler(dt0, t0=t0, t1=t1)
+    em_sampler = EulerMaruyamaSampler(dt0, t0=t0, t1=t1)
+    # 7.2 EDM sampler
     N = 500
     ts = get_edm_sampling_ts(model, N=N, t1=t1, t0=t0)
-    step_size_controller = dfx.StepTo(ts)
+    stepsize_controller = dfx.StepTo(ts)
     edm_sampler = ODESampler(
-        None, t0=t0, t1=t1, solver=dfx.Heun(), step_size_controller=step_size_controller
+        None, t0=t0, t1=t1, solver=dfx.Heun(), stepsize_controller=stepsize_controller
     )
 
     # 8. guidance
+    # 8.1 no guidance
+    guidance_free = GuidanceFree()
+    # 8.2 moment matching
     do_B = 1.0
     const_matrix = jnp.array([[0.0, do_B, 0.0]])
-    y = jnp.array([do_B])
+    moment_matching_y = jnp.array([do_B])
     moment_matching_guidance = MomentMatchingGuidance(
         const_matrix,
-        y,
+        moment_matching_y,
     )
+    # 8.3 manifold
+    mask = jnp.array([False, True, False])
+    manifold_y = jnp.array([0.0, do_B, 0.0])
+    manifold_guidance = ManifoldGuidance(mask, manifold_y)

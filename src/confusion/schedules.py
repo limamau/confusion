@@ -24,4 +24,8 @@ def get_edm_sampling_ts(
     ts = jnp.array([model.t(sigma_i) for sigma_i in sigmas])
     ts = jnp.clip(ts, t0, t1)
 
+    # to bypass dfx.diffeqsolve's assertion
+    if abs(ts[0] - t1) < 1e-2:
+        ts = jnp.concatenate([jnp.array([t1]), ts[1:]])
+
     return ts

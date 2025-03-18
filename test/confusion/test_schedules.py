@@ -8,16 +8,16 @@ from confusion.schedules import get_edm_sampling_ts
 def main():
     # parameters definitions
     NUM_VARIABLES = 3
-    HIDDEN_SIZE = 256
+    HIDDEN_SIZE = 4
     SEED = 5678
     SIGMA_MIN = 0.1
     SIGMA_MAX = 0.5
     BETA_MIN_BAR = 0.1
-    BETA_MAX_BAR = 1.0
+    BETA_MAX_BAR = 0.12
     RHO = 7
     N = 10
     T0 = 0.1
-    T1 = 3.0
+    T1 = 5.0
     TOL = 1e-2
 
     # create models
