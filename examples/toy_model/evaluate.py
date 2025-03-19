@@ -1,25 +1,13 @@
 import argparse
 import time
-from functools import partial
 
 import jax.numpy as jnp
 import jax.random as jr
 from configs import get_config
-from experiment import get_joint, plot_samples
+from reference import get_joint, plot_samples
 
 from confusion.checkpointing import Checkpointer
 from confusion.utils import get_and_create_figs_dir, normalize
-
-FIGSIZE = (4, 2.5)
-DPI = 200
-BINS = 20
-ALPHA = 0.5
-XLIM = (-6, 6)
-YLIM = (0, 200)
-IS_SHOWING = False
-IS_SAVING = True
-SHOW_STATS = True
-PRINT_STATS = False
 
 
 def main(args):
@@ -60,30 +48,6 @@ def main(args):
 
     # restore
     model, _ = ckpter.restore(model, opt)
-
-    # plotting function
-    plt_fn = partial(
-        plot_samples,
-        figs_dir=figs_dir,
-        bins=BINS,
-        alpha=ALPHA,
-        xlim=XLIM,
-        ylim=YLIM,
-        figsize=FIGSIZE,
-        dpi=DPI,
-        is_showing=IS_SHOWING,
-        is_saving=IS_SAVING,
-        show_stats=SHOW_STATS,
-        print_stats=PRINT_STATS,
-    )
-
-    # reference experiments
-    for title, do_B in [
-        ("No intervention - reference", None),
-        ("Do(B={} - reference)".format(do_B), do_B),
-    ]:
-        ref_A, ref_B, ref_C = get_joint(sample_size, key, do_B=do_B)
-        plt_fn(title, ref_A, ref_B, ref_C)
 
     # diffusion experiments
     for title, do_B, guidance, sampler in [
@@ -131,7 +95,15 @@ def main(args):
         )
         end_time = time.time()
         gen_A, gen_B, gen_C = jnp.split(gen_samples, 3, axis=1)
-        plt_fn(title, gen_A, gen_B, gen_C, sampling_time=(end_time - start_time))
+        plot_samples(
+            title,
+            gen_A,
+            gen_B,
+            gen_C,
+            figs_dir,
+            sampling_time=(end_time - start_time),
+            is_showing=False,
+        )
 
 
 if __name__ == "__main__":

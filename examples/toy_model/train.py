@@ -31,7 +31,7 @@ def main(args):
     key = jr.PRNGKey(seed)
     A, B, C = get_joint(num_samples, key)
     samples = jnp.concatenate([A, B, C], axis=1)
-    print("joint shape:", samples.shape)
+    print("training data shape:", samples.shape)
     samples, _, _ = normalize(samples)
 
     # get checkpointer for new checkpoints

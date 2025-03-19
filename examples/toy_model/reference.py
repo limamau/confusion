@@ -6,6 +6,29 @@ import jax.random as jr
 import matplotlib.pyplot as plt
 from jaxtyping import Array, Key
 
+from confusion.utils import get_and_create_figs_dir
+
+
+def get_joint(
+    num_samples: int, key: Key, do_B: Optional[float] = None
+) -> tuple[Array, Array, Array]:
+    # split keys
+    key_A, key_B, key_C = jr.split(key, 3)
+
+    # A
+    A = jr.normal(key_A, (num_samples, 1))
+
+    # B
+    if do_B is None:
+        B = A + 0.5 * jr.normal(key_B, (num_samples, 1))
+    else:
+        B = do_B * jnp.ones((num_samples, 1))
+
+    # C
+    C = B + 0.5 * jr.normal(key_C, (num_samples, 1))
+
+    return A, B, C
+
 
 def get_file_name(figs_dir: str, title: str) -> str:
     return os.path.join(figs_dir, title.replace(" ", "").replace(",", "_") + ".png")
@@ -87,51 +110,21 @@ def plot_samples(
     plt.close()
 
 
-def get_joint(
-    num_samples: int, key: Key, do_B: Optional[float] = None
-) -> tuple[Array, Array, Array]:
-    # split keys
-    key_A, key_B, key_C = jr.split(key, 3)
-
-    # A
-    A = jr.normal(key_A, (num_samples, 1))
-
-    # B
-    if do_B is None:
-        B = A + 0.5 * jr.normal(key_B, (num_samples, 1))
-    else:
-        B = do_B * jnp.ones((num_samples, 1))
-
-    # C
-    C = B + 0.5 * jr.normal(key_C, (num_samples, 1))
-
-    return A, B, C
-
-
 def main():
-    # define experiment parameters
     NUM_SAMPLES = 1000
-    DO_B = 3
+    DO_B = 1.0
     SEED = 5678
+    NAME = "reference"
 
-    # no intervention
     key = jr.PRNGKey(SEED)
-    samples_A, samples_B, samples_C = get_joint(NUM_SAMPLES, key)
-    plt.hist(samples_A.flatten(), bins=20, alpha=0.5, label="A")
-    plt.hist(samples_B.flatten(), bins=20, alpha=0.5, label="B")
-    plt.hist(samples_C.flatten(), bins=20, alpha=0.5, label="C")
-    plt.title("No Intervention")
-    plt.legend()
-    plt.show()
-
-    # do(B) intervention
-    samples_A, samples_B, samples_C = get_joint(NUM_SAMPLES, key, do_B=DO_B)
-    plt.hist(samples_A.flatten(), bins=20, alpha=0.5, label="A")
-    plt.hist(samples_B.flatten(), bins=20, alpha=0.5, label="B")
-    plt.hist(samples_C.flatten(), bins=20, alpha=0.5, label="C")
-    plt.title("Do(B={})".format(DO_B))
-    plt.legend()
-    plt.show()
+    figs_dir = get_and_create_figs_dir(__file__, NAME)
+    for title, do_B in [
+        ("No intervention - reference", None),
+        ("Do(B={}) - reference".format(DO_B), DO_B),
+    ]:
+        key, subkey = jr.split(key)
+        ref_A, ref_B, ref_C = get_joint(NUM_SAMPLES, subkey, do_B=do_B)
+        plot_samples(title, ref_A, ref_B, ref_C, figs_dir)
 
 
 if __name__ == "__main__":
