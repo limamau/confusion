@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import einops
 import equinox as eqx
@@ -8,75 +8,101 @@ import jax.random as jr
 from jaxtyping import Array, Bool, Float, Key, Real
 
 from ..layers import GaussianFourierProjection
-from ..networks import AbstractCausalNetwork
+from ..networks import AbstractNetwork
 
 
-class VariablePartitionedLinear(eqx.Module):
+class PerVariableSharedLinear(eqx.Module):
     linear: eqx.nn.Linear
 
-    def __init__(self, in_dim: int, out_dim: int, key: Key):
-        self.linear = eqx.nn.Linear(in_dim, out_dim, key=key)
+    # here vars_size is not used, but passed as a parameter for consistency
+    def __init__(self, vars_size: int, in_size: int, out_size: int, *, key: Key):
+        self.linear = eqx.nn.Linear(in_size, out_size, key=key)
 
     def __call__(
-        self, x: Float[Array, "  vars_dim in_dim"]
-    ) -> Float[Array, " vars_dim out_dim"]:
+        self, x: Float[Array, " vars_size in_size"]
+    ) -> Float[Array, " vars_size out_size"]:
         x = jax.vmap(self.linear)(x)
         return x
 
 
+class PerVariableIndependentLinears(eqx.Module):
+    linears: list[eqx.nn.Linear]
+    num_vars: int
+
+    def __init__(self, vars_size: int, in_size: int, out_size: int, *, key: Key):
+        keys = jax.random.split(key, vars_size)
+        self.linears = [
+            eqx.nn.Linear(in_size, out_size, key=keys[i]) for i in range(vars_size)
+        ]
+        self.num_vars = vars_size
+
+    def __call__(
+        self, x: Float[Array, " vars_size in_size"]
+    ) -> Float[Array, " vars_size out_size"]:
+        results = [self.linears[i](x[i]) for i in range(self.num_vars)]
+        return jnp.stack(results)
+
+
+# common type for the two above classes
+PerVariableLinear = Union[PerVariableSharedLinear, PerVariableIndependentLinears]
+
+
 class CausalAttention(eqx.Module):
-    causal_mask: Bool[Array, " vars_dim vars_dim"]
-    in_dim: int
-    qkv_dim: int
+    causal_mask: Bool[Array, " vars_size vars_size"]
+    in_size: int
+    qkv_size: int
     attention: eqx.nn.MultiheadAttention
-    in_linear: VariablePartitionedLinear
-    out_linear: VariablePartitionedLinear
+    in_linear: PerVariableLinear
+    out_linear: PerVariableLinear
 
     def __init__(
         self,
-        causal_mask: Bool[Array, " vars_dim vars_dim"],
-        in_dim: int,
-        qkv_dim: int,
+        linear_class: type[PerVariableSharedLinear]
+        | type[PerVariableIndependentLinears],
+        vars_size: int,
+        causal_mask: Bool[Array, " vars_size vars_size"],
+        in_size: int,
+        qkv_size: int,
         key: Key,
     ):
         keys = jr.split(key, 3)
         self.causal_mask = causal_mask
-        self.in_dim = in_dim
-        self.qkv_dim = qkv_dim
+        self.in_size = in_size
+        self.qkv_size = qkv_size
         self.attention = eqx.nn.MultiheadAttention(
             num_heads=1,
-            query_size=qkv_dim,
+            query_size=qkv_size,
             key=keys[0],
         )
-        self.in_linear = VariablePartitionedLinear(in_dim, qkv_dim * 3, key=keys[1])
-        self.out_linear = VariablePartitionedLinear(qkv_dim, in_dim, key=keys[2])
+        self.in_linear = linear_class(vars_size, in_size, qkv_size * 3, key=keys[1])
+        self.out_linear = linear_class(vars_size, qkv_size, in_size, key=keys[2])
 
     def __call__(
-        self, x: Float[Array, " vars_dim in_dim"]
-    ) -> Float[Array, " vars_dim in_dim"]:
-        qkv = self.in_linear(x)  # [(vars_dim, qkv_dim*3,)]
-        q, k, v = jnp.split(qkv, 3, axis=1)  # ((vars_dim, qkv_dim,), ...)
-        x = self.attention(q, k, v, mask=self.causal_mask)  # (vars_dim, qkv_dim)
-        x = self.out_linear(x)  # [(vars_dim, in_dim)]
+        self, x: Float[Array, " vars_size in_size"]
+    ) -> Float[Array, " vars_size in_size"]:
+        qkv = self.in_linear(x)  # [(vars_size, qkv_size*3,)]
+        q, k, v = jnp.split(qkv, 3, axis=1)  # ((vars_size, qkv_size,), ...)
+        x = self.attention(q, k, v, mask=self.causal_mask)  # (vars_size, qkv_size)
+        x = self.out_linear(x)  # [(vars_size, in_size)]
         return x
 
 
-class CausalMultiLayerPerceptron(AbstractCausalNetwork):
-    vars_dim: int
+class CausalMultiLayerPerceptron(AbstractNetwork):
+    vars_size: int
     num_blocks: int
     temb: GaussianFourierProjection
-    in_linear: VariablePartitionedLinear
-    hidden_linears: List[VariablePartitionedLinear]
+    in_linear: PerVariableLinear
+    hidden_linears: List[PerVariableLinear]
     causal_attentions: List[CausalAttention]
-    out_linear1: VariablePartitionedLinear
-    out_linear2: VariablePartitionedLinear
+    out_linear1: PerVariableLinear
+    out_linear2: PerVariableLinear
 
     def __init__(
         self,
         num_blocks: int,
-        vars_dim: int,
-        hidden_dim: int,
-        temb_dim: int,
+        vars_size: int,
+        hidden_size: int,
+        temb_size: int,
         projection_scale: float,
         causal_mask: Bool[Array, "..."],
         num_heads: int,
@@ -84,9 +110,10 @@ class CausalMultiLayerPerceptron(AbstractCausalNetwork):
         *,
         key: Key,
         is_conditional: bool = False,
+        use_shared_linears: bool = False,
     ):
         # ints
-        self.vars_dim = vars_dim
+        self.vars_size = vars_size
         self.num_blocks = num_blocks
 
         # keys for initialization
@@ -94,44 +121,61 @@ class CausalMultiLayerPerceptron(AbstractCausalNetwork):
 
         # pre-conditioning or not
         if is_conditional:
-            in_channels = temb_dim + 2
+            in_channels = temb_size + 2
         else:
-            in_channels = temb_dim + 1
+            in_channels = temb_size + 1
+
+        # choose linear type
+        linear_class = (
+            PerVariableSharedLinear
+            if use_shared_linears
+            else PerVariableIndependentLinears
+        )
 
         # time
-        self.temb = GaussianFourierProjection(temb_dim, projection_scale, key=keys[0])
-        self.in_linear = VariablePartitionedLinear(in_channels, hidden_dim, key=keys[1])
+        self.temb = GaussianFourierProjection(temb_size, projection_scale, key=keys[0])
+        self.in_linear = linear_class(vars_size, in_channels, hidden_size, key=keys[1])
 
         # hidden linears
         self.hidden_linears = []
         for b in range(num_blocks):
             self.hidden_linears.append(
-                VariablePartitionedLinear(hidden_dim, hidden_dim, key=keys[2 + 2 * b])
+                linear_class(vars_size, hidden_size, hidden_size, key=keys[2 + 2 * b])
             )
 
         # causal attention
         self.causal_attentions = []
         for b in range(num_blocks):
             self.causal_attentions.append(
-                CausalAttention(causal_mask, hidden_dim, qkv_size, key=keys[3 + 2 * b])
+                CausalAttention(
+                    linear_class,
+                    vars_size,
+                    causal_mask,
+                    hidden_size,
+                    qkv_size,
+                    key=keys[3 + 2 * b],
+                )
             )
 
         # aggregation
-        self.out_linear1 = VariablePartitionedLinear(
-            hidden_dim * num_blocks, hidden_dim, key=keys[2 + 2 * num_blocks]
+        self.out_linear1 = linear_class(
+            vars_size,
+            hidden_size * num_blocks,
+            hidden_size,
+            key=keys[2 + 2 * num_blocks],
         )
-        self.out_linear2 = VariablePartitionedLinear(
-            hidden_dim, 1, key=keys[3 + 2 * num_blocks]
+        self.out_linear2 = linear_class(
+            vars_size, hidden_size, 1, key=keys[3 + 2 * num_blocks]
         )
 
     def __call__(
         self,
-        x: Float[Array, " vars_dim"],
+        x: Float[Array, " vars_size"],
         t: Float[Array, " "],
-        c: Optional[Real[Array, " conds_dim"]],
+        c: Optional[Real[Array, " conds_size"]],
         *,
         key: Optional[Key] = None,
-    ) -> Float[Array, " vars_dim"]:
+    ) -> Float[Array, " vars_size"]:
         # time embedding
         t = self.temb(t)
 
@@ -139,12 +183,14 @@ class CausalMultiLayerPerceptron(AbstractCausalNetwork):
         x = jnp.expand_dims(x, axis=1)
 
         # aggregate time and conditions to each variable
-        t = einops.repeat(t, " temb_dim -> vars_dim temb_dim", vars_dim=self.vars_dim)
+        t = einops.repeat(
+            t, " temb_size -> vars_size temb_size", vars_size=self.vars_size
+        )
         if c is None:
             x = jnp.concatenate([x, t], axis=-1)
         else:
             c = einops.repeat(
-                c, " conds_dim -> vars_dim conds_dim", vars_dim=self.vars_dim
+                c, " conds_size -> vars_size conds_size", vars_size=self.vars_size
             )
             x = jnp.concatenate([x, t, c], axis=-1)
 

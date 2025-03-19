@@ -32,24 +32,26 @@ class Config:
     # 3. network
     num_variables = 3
     num_blocks = 3
-    hidden_dim = 256
-    temb_dim = 2
+    hidden_size = 256
+    temb_size = 2
     projection_scale = 1.0
     num_heads = 1
     qkv_size = 8
     is_conditional = False
+    use_shared_linears = False
     causal_mask = jnp.ones((num_variables, num_variables), dtype=bool)
     network = CausalMultiLayerPerceptron(
         num_blocks=num_blocks,
-        vars_dim=num_variables,
-        hidden_dim=hidden_dim,
-        temb_dim=temb_dim,
+        vars_size=num_variables,
+        hidden_size=hidden_size,
+        temb_size=temb_size,
         projection_scale=projection_scale,
         causal_mask=causal_mask,
         num_heads=num_heads,
         qkv_size=qkv_size,
         key=net_key,
         is_conditional=is_conditional,
+        use_shared_linears=use_shared_linears,
     )
 
     # 4. diffusion model

@@ -9,7 +9,7 @@ from einops import rearrange
 from jaxtyping import Array, Key
 
 from ..layers import GaussianFourierProjection
-from ..networks import AbstractNaiveNetwork
+from ..networks import AbstractNetwork
 
 
 class LinearTimeSelfAttention(eqx.Module):
@@ -237,7 +237,7 @@ class ResnetBlock(eqx.Module):
         return out
 
 
-class UNet(AbstractNaiveNetwork):
+class UNet(AbstractNetwork):
     temb: GaussianFourierProjection
     t_mlp: eqx.nn.MLP
     c_mlp: eqx.nn.MLP | None

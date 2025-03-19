@@ -1,7 +1,5 @@
 __all__ = [
     "AbstractNetwork",
-    "AbstractCausalNetwork",
-    "AbstractNaiveNetwork",
     "Mixer",
     "MultiLayerPerceptron",
     "UNet",
@@ -10,7 +8,7 @@ __all__ = [
 
 from .images.mixer import Mixer
 from .images.unet import UNet
-from .networks import AbstractCausalNetwork, AbstractNaiveNetwork, AbstractNetwork
+from .networks import AbstractNetwork
 from .points.causal_mlp import (
     CausalMultiLayerPerceptron,
 )
