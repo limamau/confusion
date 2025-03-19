@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
-from ..networks import AbstractNaiveNetwork
+from ..networks import AbstractNetwork
 
 
 class MixerBlock(eqx.Module):
@@ -43,7 +43,7 @@ class MixerBlock(eqx.Module):
         return x
 
 
-class Mixer(AbstractNaiveNetwork):
+class Mixer(AbstractNetwork):
     conv_in: eqx.nn.Conv2d
     conv_out: eqx.nn.ConvTranspose2d
     blocks: list

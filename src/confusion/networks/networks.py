@@ -16,16 +16,3 @@ class AbstractNetwork(eqx.Module):
         key: Optional[Key] = None,
     ) -> Array:
         raise NotImplementedError
-
-
-class AbstractNaiveNetwork(AbstractNetwork):
-    @abstractmethod
-    def __call__(
-        self,
-        x: Array,
-        t: Array,
-        c: Optional[Array],
-        *,
-        key: Optional[Key] = None,
-    ) -> Array:
-        raise NotImplementedError

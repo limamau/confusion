@@ -16,3 +16,6 @@ dependencies = [
     "optax",
     "orbax",
 ]
+
+[tool.ruff.lint]
+ignore = ["E731", "F722"]

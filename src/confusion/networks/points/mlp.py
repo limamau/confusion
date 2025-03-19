@@ -7,10 +7,10 @@ import jax.random as jr
 from jaxtyping import Array, Key
 
 from ..layers import GaussianFourierProjection
-from ..networks import AbstractNaiveNetwork
+from ..networks import AbstractNetwork
 
 
-class MultiLayerPerceptron(AbstractNaiveNetwork):
+class MultiLayerPerceptron(AbstractNetwork):
     temb: GaussianFourierProjection
     in_linear: eqx.nn.Linear
     hidden_linear1: eqx.nn.Linear
@@ -22,7 +22,6 @@ class MultiLayerPerceptron(AbstractNaiveNetwork):
         self,
         num_variables: int,
         hidden_size: int,
-        t1: float,
         *,
         key: Key,
         is_conditional: bool = False,

@@ -3,7 +3,7 @@ import argparse
 import jax.numpy as jnp
 import jax.random as jr
 from configs import get_config
-from experiment import get_joint
+from reference import get_joint
 
 from confusion.checkpointing import Checkpointer
 from confusion.training import train
@@ -24,12 +24,13 @@ def main(args):
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     train_key = config.train_key
+    t0 = config.t0
+    t1 = config.t1
 
     # generate samples
     key = jr.PRNGKey(seed)
-    A, B, C = get_joint(num_samples, key)
-    samples = jnp.concatenate([A, B, C], axis=1)
-    print("joint shape:", samples.shape)
+    A, B = get_joint(num_samples, key)
+    samples = jnp.concatenate([A, B], axis=1)
     samples, _, _ = normalize(samples)
 
     # get checkpointer for new checkpoints
@@ -51,6 +52,8 @@ def main(args):
         ckpter,
         train_key,
         None,
+        t0=t0,
+        t1=t1,
     )
 
 
