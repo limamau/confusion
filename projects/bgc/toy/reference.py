@@ -49,7 +49,6 @@ def plot_samples(
     is_showing: bool = True,
     is_saving: bool = True,
     show_stats: bool = True,
-    print_stats: bool = True,
     sampling_time: Optional[float] = None,
 ) -> None:
     # stats
@@ -59,17 +58,6 @@ def plot_samples(
     std_B = jnp.std(sam_B)
     mean_C = jnp.mean(sam_C)
     std_C = jnp.std(sam_C)
-
-    # prints
-    if print_stats or sampling_time is not None:
-        print(title)
-        if sampling_time is not None:
-            print("Sampling time: {:.2f} seconds".format(sampling_time))
-        if print_stats:
-            print(f"A: mean={mean_A:.2f}, std={std_A:.2f}")
-            print(f"B: mean={mean_B:.2f}, std={std_B:.2f}")
-            print(f"C: mean={mean_C:.2f}, std={std_C:.2f}")
-        print()
 
     # plot
     fig = plt.figure(figsize=figsize, dpi=dpi)

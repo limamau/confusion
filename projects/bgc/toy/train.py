@@ -3,7 +3,7 @@ import argparse
 import jax.numpy as jnp
 import jax.random as jr
 from configs import get_config
-from experiment import get_joint
+from reference import get_joint
 
 from confusion.checkpointing import Checkpointer
 from confusion.training import train
@@ -26,6 +26,10 @@ def main(args):
     train_key = config.train_key
     t0 = config.t0
     t1 = config.t1
+
+    # causal mask if available
+    if hasattr(config, "causal_mask"):
+        print("causal mask:\n", config.causal_mask)  # pyright: ignore
 
     # generate samples
     key = jr.PRNGKey(seed)

@@ -21,7 +21,7 @@ def get_weight2_fn(beta_min_bar, beta_max_bar):
 class Config:
     """Configuration for Causal Variance Preserving."""
 
-    name = "cvp"
+    name = "cvp-all"
 
     # 1. keys
     seed = 5678
@@ -42,6 +42,12 @@ class Config:
     is_conditional = False
     use_shared_linears = False
     causal_mask = jnp.ones((num_variables, num_variables), dtype=bool)
+    # causal_mask = jnp.zeros((num_variables, num_variables), dtype=bool)
+    # causal_mask = causal_mask.at[0, 0].set(True)
+    # causal_mask = causal_mask.at[1, 1].set(True)
+    # causal_mask = causal_mask.at[2, 2].set(True)
+    # causal_mask = causal_mask.at[0, 1].set(True)
+    # causal_mask = causal_mask.at[1, 2].set(True)
     network = CausalMultiLayerPerceptron(
         num_blocks=num_blocks,
         vars_size=num_variables,
