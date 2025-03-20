@@ -16,15 +16,17 @@ def get_and_create_figs_dir(file_path: str, sub_dir: Optional[str] = None):
     return figs_dir
 
 
-def denormalize(data: Array, mean: Array, std: Array) -> Array:
-    return data * std + mean
+def denormalize(data: Array, mean: Array, std: Array, sigma_data: float = 1.0) -> Array:
+    return data * std / sigma_data + mean
 
 
-def normalize(data: Array, mean=None, std=None) -> Tuple[Array, Array, Array]:
+def normalize(
+    data: Array, mean=None, std=None, sigma_data=1.0
+) -> Tuple[Array, Array, Array]:
     if mean is None:
         mean = jnp.mean(data)
 
     if std is None:
         std = jnp.std(data)
 
-    return (data - mean) / std, mean, std
+    return (data - mean) / std * sigma_data, mean, std

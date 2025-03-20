@@ -7,8 +7,8 @@ from jaxtyping import Array, Key
 class GaussianFourierProjection(eqx.Module):
     gaussian: jax.Array
 
-    def __init__(self, mapping_dim: int, scale: float = 10.0, *, key: Key):
-        self.gaussian = jax.random.normal(key, (mapping_dim // 2,)) * scale
+    def __init__(self, proj_size: int, proj_scale: float, *, key: Key):
+        self.gaussian = jax.random.normal(key, (proj_size // 2,)) * proj_scale
 
     def __call__(self, t: Array) -> Array:
         projection = t * self.gaussian * 2 * jnp.pi

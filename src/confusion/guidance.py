@@ -62,8 +62,8 @@ class MomentMatchingGuidance(AbstractGuidance):
         assert self.C.shape == (*self.y.shape, *x.shape)
 
         # pre-calculations
-        sigma_t2 = jnp.square(model.sigma(t))
-        s_t = model.s(t)
+        sigma_t2 = jnp.square(model.sde.sigma(t))
+        s_t = model.sde.s(t)
 
         def x0_hat(x: Array) -> Array:
             score = model.score(x, t, c, key=key)
@@ -112,7 +112,7 @@ class ManifoldGuidance:
 
         # perturbation of reference values
         # to the same noise level at t
-        mean, std = model.perturbation(self.y, t)
+        mean, std = model.sde.perturbation(self.y, t)
         perturbed_y = mean + self.y * std
 
         # change values on score according to mask

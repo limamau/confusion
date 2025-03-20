@@ -20,6 +20,8 @@ class MultiLayerPerceptron(AbstractNetwork):
 
     def __init__(
         self,
+        proj_size: int,
+        proj_scale: float,
         num_variables: int,
         hidden_size: int,
         *,
@@ -29,13 +31,11 @@ class MultiLayerPerceptron(AbstractNetwork):
         keys = jr.split(key, 6)
 
         if is_conditional:
-            in_channels = num_variables + 2 + 1
+            in_channels = num_variables + proj_size // 2 * 2 + 1
         else:
-            in_channels = num_variables + 2
+            in_channels = num_variables + proj_size // 2 * 2
 
-        mapping_dim = 2
-        scale = 1.0
-        self.temb = GaussianFourierProjection(mapping_dim, scale, key=keys[0])
+        self.temb = GaussianFourierProjection(proj_size, proj_scale, key=keys[0])
         self.in_linear = eqx.nn.Linear(in_channels, hidden_size, key=keys[1])
         self.hidden_linear1 = eqx.nn.Linear(hidden_size, hidden_size, key=keys[2])
         self.hidden_linear2 = eqx.nn.Linear(hidden_size, hidden_size, key=keys[3])

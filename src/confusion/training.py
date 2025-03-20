@@ -1,9 +1,7 @@
-import functools as ft
 import time
 from typing import Callable, Iterator, Optional, Tuple
 
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 from equinox import filter_jit
@@ -12,9 +10,9 @@ from optax import GradientTransformation, OptState
 
 from .checkpointing import Checkpointer
 from .diffusion import AbstractDiffusionModel
+from .losses import ScoreMatchingLoss
 
 
-# auxiliary functions #
 def dataloader(
     data: Array, conds: Optional[Array], batch_size: int, *, key: Key
 ) -> Iterator[Tuple[Array, Optional[Array]]]:
@@ -35,47 +33,6 @@ def dataloader(
             end = start + batch_size
 
 
-def single_loss_fn(
-    model: AbstractDiffusionModel,
-    x0: Array,
-    t: Array,
-    c: Optional[Array],
-    key: Key,
-) -> Array:
-    noise_key, dropout_key = jr.split(key)
-    mean, std = model.perturbation(x0, t)
-    # clip std to avoid division by zero
-    std = jnp.maximum(std, 1e-5)
-    noise = jr.normal(key, x0.shape)
-    x = mean + std * noise
-    pred = model.score(x, t, c, key=dropout_key)
-    return model.weights2_fn(t) * jnp.mean((pred + noise / std) ** 2)
-
-
-def batch_loss_fn(
-    model: AbstractDiffusionModel,
-    data: Array,
-    conds: Optional[Array],
-    key: Key,
-    t0: float,
-    t1: float,
-) -> Array:
-    batch_size = data.shape[0]
-    tkey, losskey = jr.split(key)
-    losskey = jr.split(losskey, batch_size)
-
-    # low-discrepancy sampling over t to reduce variance
-    # at the end of the following two lines, t \in [t0, t1]
-    # and the batches have t = {t, ..., t1}, t \in [t0, t1/batch_size]
-    t = jr.uniform(tkey, (batch_size,), minval=t0, maxval=t1 / batch_size)
-    t = t + (t1 / batch_size) * jnp.arange(batch_size)
-
-    loss_fn = ft.partial(single_loss_fn, model)
-    loss_fn = jax.vmap(loss_fn)
-
-    return jnp.mean(loss_fn(data, t, conds, losskey))  # pyright: ignore
-
-
 @filter_jit
 def make_step(
     model: AbstractDiffusionModel,
@@ -84,21 +41,20 @@ def make_step(
     key: Key,
     opt_state: OptState,
     opt_update: Callable,
-    t0: float,
-    t1: float,
+    loss: ScoreMatchingLoss,
 ) -> Tuple[Array, AbstractDiffusionModel, Key, OptState]:
-    loss_fn = eqx.filter_value_and_grad(batch_loss_fn)
-    loss, grads = loss_fn(model, data, conds, key, t0, t1)
+    filtered_loss = eqx.filter_value_and_grad(loss)
+    step_loss, grads = filtered_loss(model, data, conds, key)
     updates, opt_state = opt_update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
     key = jr.split(key, 1)[0]
-    return loss, model, key, opt_state
+    return step_loss, model, key, opt_state
 
 
-# training function #
 def train(
     model: AbstractDiffusionModel,
     opt: GradientTransformation,
+    loss: ScoreMatchingLoss,
     data: Array,
     num_steps: int,
     batch_size: int,
@@ -106,8 +62,6 @@ def train(
     ckpter: Checkpointer,
     key: Key,
     conds: Optional[Array] = None,
-    t0: float = 1e-5,
-    t1: float = 1.0,
 ):
     # optax will update the floating-point JAX arrays in the model
     opt_state = opt.init(eqx.filter(model, eqx.is_inexact_array))
@@ -123,7 +77,7 @@ def train(
         range(num_steps + 1), dataloader(data, conds, batch_size, key=loader_key)
     ):
         value, model, train_key, opt_state = make_step(
-            model, data, conds, train_key, opt_state, opt.update, t0, t1
+            model, data, conds, train_key, opt_state, opt.update, loss
         )
         total_value += value.item()
         total_size += 1

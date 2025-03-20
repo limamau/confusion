@@ -18,20 +18,20 @@ def main(args):
     num_steps = config.num_steps
     batch_size = config.batch_size
     model = config.model
+    sigma_data = config.sigma_data
     opt = config.opt
+    loss = config.loss
     print_every = config.print_every
     saving_path = config.saving_path
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     train_key = config.train_key
-    t0 = config.t0
-    t1 = config.t1
 
     # generate samples
     key = jr.PRNGKey(seed)
     A, B = get_joint(num_samples, key)
     samples = jnp.concatenate([A, B], axis=1)
-    samples, _, _ = normalize(samples)
+    samples, _, _ = normalize(samples, sigma_data=sigma_data)
 
     # get checkpointer for new checkpoints
     ckpter = Checkpointer(
@@ -45,6 +45,7 @@ def main(args):
     train(
         model,
         opt,
+        loss,
         samples,
         num_steps,
         batch_size,
@@ -52,8 +53,6 @@ def main(args):
         ckpter,
         train_key,
         None,
-        t0=t0,
-        t1=t1,
     )
 
 
@@ -64,8 +63,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         choices=[
-            "cve",
-            "cvp",
+            "edm",
             "ve",
             "vp",
         ],

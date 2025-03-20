@@ -31,6 +31,7 @@ def main(args):
     # get config
     config = get_config(args)
     seed = config.seed
+    sigma_data = config.sigma_data
     model = config.model
     opt = config.opt
     saving_path = config.saving_path
@@ -48,7 +49,9 @@ def main(args):
     key = jr.PRNGKey(seed)
     ref_A, ref_B = get_joint(sample_size, key)
     ref_samples = jnp.concatenate([ref_A, ref_B], axis=1)
-    ref_samples, ref_samples_mean, ref_samples_std = normalize(ref_samples)
+    ref_samples, ref_samples_mean, ref_samples_std = normalize(
+        ref_samples, sigma_data=sigma_data
+    )
 
     # get checkpointer to restore
     ckpter = Checkpointer(
@@ -84,6 +87,7 @@ def main(args):
         sample_key,
         ref_samples_mean,
         ref_samples_std,
+        sigma_data,
         sample_size,
     )
     end_time = time.time()
@@ -125,6 +129,7 @@ def main(args):
         sample_key,
         ref_samples_mean,
         ref_samples_std,
+        sigma_data,
         sample_size,
         guidance=guidance,
     )
@@ -151,6 +156,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         choices=[
+            "edm",
             "ve",
             "vp",
         ],

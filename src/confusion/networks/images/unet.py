@@ -251,6 +251,8 @@ class UNet(AbstractNetwork):
     def __init__(
         self,
         data_shape: Tuple[int, int, int],
+        proj_size: int,
+        proj_scale: float,
         is_biggan: bool,
         dim_mults: List[int],
         hidden_size: int,
@@ -272,7 +274,7 @@ class UNet(AbstractNetwork):
         in_out = list(exact_zip(dims[:-1], dims[1:]))
 
         # setup time handling
-        self.temb = GaussianFourierProjection(hidden_size, key=keys[0])
+        self.temb = GaussianFourierProjection(proj_size, proj_scale, key=keys[0])
         self.t_mlp = eqx.nn.MLP(
             hidden_size,
             hidden_size,

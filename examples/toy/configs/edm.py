@@ -4,24 +4,22 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 
-from confusion.diffusion import StandardDiffusionModel
-from confusion.guidance import GuidanceFree, MomentMatchingGuidance
-from confusion.losses import ScoreMatchingLoss, StandardWeighting
+from confusion.diffusion import EDMDiffusionModel
+from confusion.guidance import MomentMatchingGuidance
+from confusion.losses import EDMWeighting, ScoreMatchingLoss
 from confusion.networks import MultiLayerPerceptron
-from confusion.sampling import EulerMaruyamaSampler
-from confusion.sdes import VariancePreserving
+from confusion.sampling import EulerMaruyamaSampler, edm_sampling_ts
+from confusion.sdes import VarianceExploding
 
 
-def get_weight2_fn(beta_min_bar, beta_max_bar):
-    return lambda t: 1 - jnp.exp(
-        -0.5 * t**2 * (beta_max_bar - beta_min_bar) - t * beta_min_bar
-    )
+def get_weight2_fn(sigma_min, sigma_max):
+    return lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), 2 * t)
 
 
 class Config:
-    """Configuration for Variance Preserving."""
+    """Configuration for Elucidating the Design Space of Diffusion-Based Generative Models (EDM)."""
 
-    name = "vp"
+    name = "edm"
 
     # 1. keys
     seed = 5678
@@ -49,26 +47,28 @@ class Config:
     # 4. sde
     t0 = 0.1
     t1 = 1.0
-    beta_min_bar = 0.1
-    beta_max_bar = 0.5
-    sde = VariancePreserving(
-        beta_min_bar,
-        beta_max_bar,
+    sigma_min = 0.1
+    sigma_max = 0.5
+    is_approximate = False
+    sde = VarianceExploding(
+        sigma_min,
+        sigma_max,
+        is_approximate=is_approximate,
     )
 
     # 5. diffusion model
-    sigma_data = 1.0  # for completeness, but not used
-    model = StandardDiffusionModel(network, sde)
+    sigma_data = 0.5
+    model = EDMDiffusionModel(network, sde, sigma_data)
 
-    # 5. optimization
+    # 6. optimization
     num_steps = 10_000
     lr = 1e-3
     batch_size = 32
     opt = optax.adam(lr)
-    weighting = StandardWeighting(sde)
+    weighting = EDMWeighting(sde, sigma_data)
     loss = ScoreMatchingLoss(weighting, t0=t0, t1=t1)
 
-    # 6. logging and checkpointing
+    # 7. logging and checkpointing
     print_every = 1000
     max_save_to_keep = 1
     save_every = 5000
@@ -77,16 +77,16 @@ class Config:
         f"../checkpoints/{name}",
     )
 
-    # 7. sampling
-    dt0 = 0.005
+    # 8. sampling
+    dt0 = 0.05
     sample_size = 1000
     conds = None
-    sampler = EulerMaruyamaSampler(dt0, t0=t0, t1=t1)
+    edm_ts = edm_sampling_ts(sde, t0=t0, t1=t1)
+    sampler = EulerMaruyamaSampler(
+        dt0, t0, t1
+    )  # limamau: implement a working EDM sampler
 
-    # 8. guidance
-    # 8.1 no guidance
-    guidance_free = GuidanceFree()
-    # 8.2 moment matching
+    # 9. guidance
     do_A = 1.0
     const_matrix = jnp.array([[do_A, 0.0]])
     y = jnp.array([do_A])

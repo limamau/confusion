@@ -13,6 +13,41 @@ from jaxtyping import Array, Key
 
 from .diffusion import AbstractDiffusionModel
 from .guidance import AbstractGuidance, GuidanceFree
+from .sdes import AbstractSDE
+from .utils import denormalize
+
+
+# auxiliary functions #
+def edm_sampling_ts(
+    sde: AbstractSDE,
+    rho: float = 7.0,
+    N: int = 300,
+    t0: float = 1e-3,
+    t1: float = 1.0,
+):
+    sigma_max = sde.sigma(jnp.array([t1]))
+    sigma_min = sde.sigma(jnp.array([t0]))
+
+    sigmas = jnp.power(
+        jnp.power(sigma_max, (1 / rho))
+        + jnp.arange(N)
+        / (N - 1)
+        * (jnp.power(sigma_min, (1 / rho)) - jnp.power(sigma_max, (1 / rho))),
+        rho,
+    )
+
+    ts = jnp.array([sde.t(sigma_i) for sigma_i in sigmas])
+
+    # to bypass dfx.diffeqsolve's assertion
+    if abs(ts[0] - t1) < 1e-2 and abs(ts[-1] - t0) < 1e-4:
+        ts = ts.at[0].set(t1)
+        ts = ts.at[-1].set(t0)
+    else:
+        raise ValueError(
+            "ts must start at t1 and end at t0, but got [{}, {}].".format(ts[0], ts[-1])
+        )
+
+    return ts
 
 
 # samplers #
@@ -52,6 +87,7 @@ class AbstractSampler:
         key: Key,
         norm_mean: Array,
         norm_std: Array,
+        sigma_data: float,
         sample_size: int,
         guidance: AbstractGuidance = GuidanceFree(),
     ) -> Array:
@@ -62,8 +98,8 @@ class AbstractSampler:
             data_shape,
             guidance,
         )
-        gen_samples = jax.vmap(sample_fn)(conds, sample_key)  # pyright: ignore
-        return norm_mean + norm_std * gen_samples
+        gen_samples = jax.vmap(sample_fn)(conds, sample_key)
+        return denormalize(gen_samples, norm_mean, norm_std, sigma_data)
 
 
 class ODESampler(AbstractSampler):
@@ -92,8 +128,8 @@ class ODESampler(AbstractSampler):
         key: Key,
     ) -> Array:
         def fun(t, x, args):
-            f = model.drift(x, t)
-            g2 = jnp.square(model.diffusion(t))
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
             score = guidance.apply(model, x, t, conds, key=None)
             return f - 0.5 * g2 * score
 
@@ -142,13 +178,13 @@ class SDESampler(AbstractSampler):
         key: Key,
     ) -> Array:
         def back_drift(t, x, args):
-            f = model.drift(x, t)
-            g2 = jnp.square(model.diffusion(t))
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
             score = guidance.apply(model, x, t, conds, key=key)
             return f - g2 * score
 
         def back_diffusion(t, x, args):
-            return model.diffusion(t)
+            return model.sde.diffusion(t)
 
         keys = jr.split(key, 2)
         bm = dfx.VirtualBrownianTree(self.t0, 1.0, tol=1e-3, shape=(), key=keys[0])
@@ -200,13 +236,13 @@ class EulerMaruyamaSampler(AbstractSampler):
             raise ValueError("dt0 must be provided for Euler–Maruyama sampling.")
 
         def back_drift(t, x):
-            f = model.drift(x, t)
-            g2 = jnp.square(model.diffusion(t))
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
             score = guidance.apply(model, x, t, conds, key=key)
             return f - g2 * score
 
         def back_diffusion(t, x):
-            return model.diffusion(t)
+            return model.sde.diffusion(t)
 
         # pre-allocations
         x1 = jr.normal(key, data_shape)
