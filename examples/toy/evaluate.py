@@ -87,8 +87,8 @@ def main(args):
         sample_key,
         ref_samples_mean,
         ref_samples_std,
-        sigma_data,
         sample_size,
+        sigma_data=sigma_data,
     )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
@@ -129,8 +129,8 @@ def main(args):
         sample_key,
         ref_samples_mean,
         ref_samples_std,
-        sigma_data,
         sample_size,
+        sigma_data=sigma_data,
         guidance=guidance,
     )
     end_time = time.time()

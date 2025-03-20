@@ -12,12 +12,6 @@ from confusion.sampling import EulerMaruyamaSampler
 from confusion.sdes import VariancePreserving
 
 
-def get_weight2_fn(beta_min_bar, beta_max_bar):
-    return lambda t: 1 - jnp.exp(
-        -0.5 * t**2 * (beta_max_bar - beta_min_bar) - t * beta_min_bar
-    )
-
-
 class Config:
     """Configuration for Variance Preserving."""
 

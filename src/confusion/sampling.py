@@ -87,8 +87,8 @@ class AbstractSampler:
         key: Key,
         norm_mean: Array,
         norm_std: Array,
-        sigma_data: float,
         sample_size: int,
+        sigma_data: float = 1.0,
         guidance: AbstractGuidance = GuidanceFree(),
     ) -> Array:
         sample_key = jr.split(key, sample_size)

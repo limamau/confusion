@@ -12,10 +12,6 @@ from confusion.sampling import EulerMaruyamaSampler
 from confusion.sdes import VarianceExploding
 
 
-def get_weight2_fn(sigma_min, sigma_max):
-    return lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), 2 * t)
-
-
 class Config:
     """Configuration for Variance Exploding."""
 
