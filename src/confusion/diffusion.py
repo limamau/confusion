@@ -12,6 +12,7 @@ from .sdes import AbstractSDE
 class AbstractDiffusionModel(eqx.Module):
     network: AbstractNetwork
     sde: AbstractSDE
+    sigma_data: float
 
     def __init__(self, network: AbstractNetwork, sde: AbstractSDE):
         self.network = network
@@ -30,6 +31,8 @@ class AbstractDiffusionModel(eqx.Module):
 
 
 class StandardDiffusionModel(AbstractDiffusionModel):
+    sigma_data: float = 1.0
+
     def __init__(self, network: AbstractNetwork, sde: AbstractSDE):
         super().__init__(network, sde)
 

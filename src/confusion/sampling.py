@@ -17,7 +17,6 @@ from .sdes import AbstractSDE
 from .utils import denormalize
 
 
-# auxiliary functions #
 def edm_sampling_ts(
     sde: AbstractSDE,
     rho: float = 7.0,
@@ -87,11 +86,10 @@ class AbstractSampler:
         key: Key,
         norm_mean: Array,
         norm_std: Array,
-        sample_size: int,
-        sigma_data: float = 1.0,
+        num_samples: int,
         guidance: AbstractGuidance = GuidanceFree(),
     ) -> Array:
-        sample_key = jr.split(key, sample_size)
+        sample_key = jr.split(key, num_samples)
         sample_fn = ft.partial(
             self.single_sample,
             model,
@@ -99,7 +97,7 @@ class AbstractSampler:
             guidance,
         )
         gen_samples = jax.vmap(sample_fn)(conds, sample_key)
-        return denormalize(gen_samples, norm_mean, norm_std, sigma_data)
+        return denormalize(gen_samples, norm_mean, norm_std, model.sigma_data)
 
 
 class ODESampler(AbstractSampler):
@@ -212,11 +210,9 @@ class SDESampler(AbstractSampler):
 # the class below is basically a home-made implementation of the Euler-Maruyama solver,
 # which can be equally achived with the SDESampler class above using dfx.Euler()
 class EulerMaruyamaSampler(AbstractSampler):
-    # limamau: make it possible to use dt0=None with ts provided
-    # on init, check if dt0 is None and ts is provided
     def __init__(
         self,
-        dt0: Optional[float],
+        dt0: Optional[float] = 5e-3,
         t0: float = 1e-3,
         t1: float = 1.0,
     ):
@@ -230,7 +226,6 @@ class EulerMaruyamaSampler(AbstractSampler):
         guidance: AbstractGuidance,
         conds: Optional[Array],
         key: Key,
-        solver: AbstractSolver = dfx.Euler(),
     ) -> Array:
         if self.dt0 is None:
             raise ValueError("dt0 must be provided for Euler–Maruyama sampling.")

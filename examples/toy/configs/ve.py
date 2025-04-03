@@ -20,7 +20,7 @@ class Config:
     # 1. keys
     seed = 5678
     key = jr.PRNGKey(seed)
-    data_key, net_key, train_key, sample_key = jr.split(key, 4)
+    net_key, train_key, evaluate_key = jr.split(key, 3)
 
     # 2. dataset
     num_samples = 10_000
@@ -59,19 +59,21 @@ class Config:
     # 6. optimization
     num_steps = 10_000
     lr = 1e-3
-    batch_size = 32
+    train_batch_size = 32
     opt = optax.adam(lr)
     weighting = StandardWeighting(sde)
-    loss = ScoreMatchingLoss(weighting, t0=t0, t1=t1)
+    loss = ScoreMatchingLoss(weighting)
 
     # 7. logging and checkpointing
-    print_every = 1000
+    print_loss_every = 1000
     max_save_to_keep = 1
     save_every = 5000
     saving_path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         f"../checkpoints/{name}",
     )
+    eval_batch_size = 512
+    eval_every = 5000
 
     # 8. sampling
     dt0 = 0.005

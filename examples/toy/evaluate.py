@@ -31,14 +31,14 @@ def main(args):
     # get config
     config = get_config(args)
     seed = config.seed
-    sigma_data = config.sigma_data
     model = config.model
     opt = config.opt
+    sigma_data = config.sigma_data
     saving_path = config.saving_path
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     sample_size = config.sample_size
-    sample_key = config.sample_key
+    evaluate_key = config.evaluate_key
     conds = config.conds
     num_variables = config.num_variables
     do_A = config.do_A
@@ -84,11 +84,10 @@ def main(args):
         model,
         ref_samples.shape[1:],
         conds,
-        sample_key,
+        evaluate_key,
         ref_samples_mean,
         ref_samples_std,
         sample_size,
-        sigma_data=sigma_data,
     )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
@@ -126,11 +125,10 @@ def main(args):
         model,
         ref_samples.shape[1:],
         conds,
-        sample_key,
+        evaluate_key,
         ref_samples_mean,
         ref_samples_std,
         sample_size,
-        sigma_data=sigma_data,
         guidance=guidance,
     )
     end_time = time.time()

@@ -10,7 +10,10 @@ from optax import GradientTransformation, OptState
 
 from .checkpointing import Checkpointer
 from .diffusion import AbstractDiffusionModel
+from .evaluation import BestEval, Evaluator
+from .logging import Logger
 from .losses import ScoreMatchingLoss
+from .utils import normalize
 
 
 def dataloader(
@@ -42,59 +45,136 @@ def make_step(
     opt_state: OptState,
     opt_update: Callable,
     loss: ScoreMatchingLoss,
+    t0: float,
+    t1: float,
 ) -> Tuple[Array, AbstractDiffusionModel, Key, OptState]:
     filtered_loss = eqx.filter_value_and_grad(loss)
-    step_loss, grads = filtered_loss(model, data, conds, key)
+    batch_size = data.shape[0]
+    newkey, tkey, losskey = jr.split(key, 3)
+    losskeys = jr.split(losskey, batch_size)
+
+    # low-discrepancy sampling over time to reduce variance
+    # at the end of the following two lines, times \in [t0, t1]
+    # and the batches have times = {t, ..., t1}, t \in [t0, t1/batch_size]
+    t = jr.uniform(tkey, (batch_size,), minval=t0, maxval=t1 / batch_size)
+    times = t + (t1 / batch_size) * jnp.arange(batch_size)
+    step_loss, grads = filtered_loss(model, data, times, conds, losskeys)
     updates, opt_state = opt_update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
-    key = jr.split(key, 1)[0]
-    return step_loss, model, key, opt_state
+    return step_loss, model, newkey, opt_state
 
 
 def train(
     model: AbstractDiffusionModel,
     opt: GradientTransformation,
     loss: ScoreMatchingLoss,
-    data: Array,
-    num_steps: int,
-    batch_size: int,
-    print_every: int,
+    train_data: Array,
+    eval_data: Array,
+    # train int args
+    num_train_steps: int,
+    train_batch_size: int,
+    print_loss_every: int,
+    # eval int args
+    eval_batch_size: int,
+    eval_every: int,
+    # end int args
     ckpter: Checkpointer,
     key: Key,
-    conds: Optional[Array] = None,
-):
+    train_conds: Optional[Array] = None,
+    eval_conds: Optional[Array] = None,
+    t0: float = 1e-5,
+    t1: float = 1.0,
+    evaluator: Optional[Evaluator] = None,
+    logger: Optional[Logger] = None,
+) -> Optional[BestEval]:
+    # normalization
+    train_data, train_mean, train_std = normalize(train_data)
+
     # optax will update the floating-point JAX arrays in the model
     opt_state = opt.init(eqx.filter(model, eqx.is_inexact_array))
 
     # prep for training
-    train_key, loader_key = jr.split(key)
+    key, train_key, train_loader_key = jr.split(key, 3)
     total_value = 0
     total_size = 0
+    train_data_loader = dataloader(
+        train_data, train_conds, train_batch_size, key=train_loader_key
+    )
+
+    # prep for evaluating
+    key, eval_key, eval_loader_key = jr.split(key, 3)
+    eval_data_loader = dataloader(
+        eval_data, eval_conds, eval_batch_size, key=eval_loader_key
+    )
+
+    # prep for logging
+    if logger is None:
+        # default console-only logging
+        logger = Logger()
+    else:
+        logger.log(f"Training log started at {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     # training loop
-    start_time = time.time()
-    for step, (data, conds) in zip(
-        range(num_steps + 1), dataloader(data, conds, batch_size, key=loader_key)
+    for step, (train_data_batch, train_conds_batch) in zip(
+        range(num_train_steps + 1), train_data_loader
     ):
         value, model, train_key, opt_state = make_step(
-            model, data, conds, train_key, opt_state, opt.update, loss
+            model,
+            train_data_batch,
+            train_conds_batch,
+            train_key,
+            opt_state,
+            opt.update,
+            loss,
+            t0,
+            t1,
         )
         total_value += value.item()
         total_size += 1
 
         # logging
-        if step % print_every == 0:
-            elapsed_time = time.time() - start_time
-            print(
-                f"Step: {step}, "
-                + f"Loss: {total_value / total_size:.4e}, "
-                + f"Elapsed time: {elapsed_time:.2f}s",
-                flush=True,
-            )
+        if step % print_loss_every == 0:
+            logger.log_step(step, total_value / total_size, "Train loss")
             total_value = 0
             total_size = 0
 
+        # evaluation
+        # limamau: fix batch_size as the same for evaluation and training,
+        # but add a num_samples_per_eval parameter to control the number of
+        # samples used for evaluation (which must be higher than training)
+        # this can be done with a for loop or a map with batch fixed, then
+        # one can write a make_eval_step and differentiate it from make_train_step
+        if step % eval_every == 0:
+            eval_data_batch, eval_conds_batch = next(eval_data_loader)
+            eval_key, losskey = jr.split(eval_key)
+            losskeys = jr.split(losskey, eval_batch_size)
+            # same principle as the low-discrepancy sampling over time,
+            # but here we fix times[0] to t0 (of trainig, not sampling!)
+            t0_batch = jnp.full(eval_batch_size, t0)
+            times = t0_batch + (t1 / eval_batch_size) * jnp.arange(eval_batch_size)
+            value = loss(model, eval_data_batch, times, eval_conds_batch, losskeys)
+
+            # logging
+            logger.log_step(step, value.item(), "Eval loss", pre_str="+ ")
+
+            # additional evaluation using sampling and metrics
+            if (evaluator is not None) and (step != 0):
+                eval_key, subkey = jr.split(eval_key)
+                evaluator.evaluate(
+                    step,
+                    model,
+                    eval_data_batch,
+                    eval_conds_batch,
+                    train_mean,
+                    train_std,
+                    logger,
+                    key=subkey,
+                )
+
         # checkpointing
-        if step % ckpter.save_every == 0:
+        if ckpter.save_every > 0 and step % ckpter.save_every == 0:
             ckpter.save(step, model, opt_state)
     ckpter.mngr.wait_until_finished()
+
+    if evaluator is not None:
+        return evaluator.best_eval

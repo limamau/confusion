@@ -10,7 +10,7 @@ from .diffusion import AbstractDiffusionModel
 from .sdes import AbstractSDE
 
 
-# weighting types used by the loss #
+# weighting used by loss #
 class AbstractWeighting:
     def __call__(self, t: Array) -> Array:
         raise NotImplementedError
@@ -43,18 +43,14 @@ class EDMWeighting(AbstractWeighting):
         ) ** 2
 
 
-# loss #
+# losses #
 class ScoreMatchingLoss:
     def __init__(
         self,
         weighting: AbstractWeighting,
-        t0: float = 1e-5,
-        t1: float = 1.0,
         std_clip: float = 1e-5,
     ):
         self.weighting = weighting
-        self.t0 = t0
-        self.t1 = t1
         self.std_clip = std_clip
 
     def single_loss_fn(
@@ -77,21 +73,11 @@ class ScoreMatchingLoss:
     def __call__(
         self,
         model: AbstractDiffusionModel,
-        data: Array,
-        conds: Optional[Array],
+        x0: Array,
+        t: Array,
+        c: Optional[Array],
         key: Key,
     ) -> Array:
-        batch_size = data.shape[0]
-        tkey, losskey = jr.split(key)
-        losskey = jr.split(losskey, batch_size)
-
-        # low-discrepancy sampling over t to reduce variance
-        # at the end of the following two lines, t \in [t0, t1]
-        # and the batches have t = {t, ..., t1}, t \in [t0, t1/batch_size]
-        t = jr.uniform(tkey, (batch_size,), minval=self.t0, maxval=self.t1 / batch_size)
-        t = t + (self.t1 / batch_size) * jnp.arange(batch_size)
-
         loss_fn = ft.partial(self.single_loss_fn, model)
         loss_fn = jax.vmap(loss_fn)
-
-        return jnp.mean(loss_fn(data, t, conds, losskey))
+        return jnp.mean(loss_fn(x0, t, c, key))

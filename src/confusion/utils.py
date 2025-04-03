@@ -21,7 +21,7 @@ def denormalize(data: Array, mean: Array, std: Array, sigma_data: float = 1.0) -
 
 
 def normalize(
-    data: Array, mean=None, std=None, sigma_data=1.0
+    data: Array, mean=None, std=None, sigma_data: float = 1.0
 ) -> Tuple[Array, Array, Array]:
     if mean is None:
         mean = jnp.mean(data)
