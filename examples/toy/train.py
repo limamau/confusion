@@ -7,6 +7,7 @@ from reference import get_joint
 
 from confusion.checkpointing import Checkpointer
 from confusion.training import train
+from confusion.utils import normalize
 
 
 def main(args):
@@ -26,16 +27,19 @@ def main(args):
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     key = config.train_key
-    t0 = config.t0
+    t0 = config.t0_training
     t1 = config.t1
+    time_schedule = config.time_schedule
 
     # generate training and validation samples
     key = jr.PRNGKey(seed)
     keys = jr.split(key, 3)
     A, B = get_joint(num_samples, keys[0])
     train_data = jnp.concatenate([A, B], axis=1)
+    train_data, train_mean, train_std = normalize(train_data)
     A, B = get_joint(num_samples, keys[1])
     eval_data = jnp.concatenate([A, B], axis=1)
+    eval_data, _, _ = normalize(eval_data, train_mean, train_std)
 
     # get checkpointer for new checkpoints
     ckpter = Checkpointer(
@@ -43,6 +47,7 @@ def main(args):
         max_save_to_keep,
         save_every,
         erase=True,
+        saving_criteria="best",
     )
 
     # training
@@ -57,10 +62,11 @@ def main(args):
         print_loss_every,
         eval_batch_size,
         eval_every,
-        ckpter,
         keys[2],
         t0=t0,
         t1=t1,
+        ckpter=ckpter,
+        time_schedule=time_schedule,
     )
 
 

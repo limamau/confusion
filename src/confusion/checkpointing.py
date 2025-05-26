@@ -3,6 +3,7 @@ import shutil
 from typing import Tuple
 
 import equinox as eqx
+import jax.numpy as jnp
 import orbax.checkpoint as ocp
 from optax import GradientTransformation, OptState
 
@@ -16,9 +17,20 @@ class Checkpointer:
         max_save_to_keep: int,
         save_every: int,
         erase: bool = False,
+        saving_criteria: str = "recency",
     ):
         self.saving_path = saving_path
         self.save_every = save_every
+        if saving_criteria == "recency":
+            best_fn = None
+        elif saving_criteria == "best":
+            # just bypass as we're using evaluators
+            # storing a float based on a best_fn
+            # rather than a PyTree of metrics
+            best_fn = lambda x: x
+        else:
+            raise ValueError(f"Unknown saving criteria: {saving_criteria}")
+        self.saving_criteria = saving_criteria
 
         if erase:
             if os.path.exists(saving_path):
@@ -28,6 +40,9 @@ class Checkpointer:
         options = ocp.CheckpointManagerOptions(
             max_to_keep=max_save_to_keep,
             save_interval_steps=save_every,
+            best_fn=best_fn,
+            # limamau: this could be more general
+            best_mode="min",
         )
         self.mngr = ocp.CheckpointManager(
             saving_path,
@@ -41,9 +56,14 @@ class Checkpointer:
         opt: GradientTransformation,
         step: int | None = None,
     ) -> Tuple[AbstractDiffusionModel, OptState]:
-        # restore latest if step is not given
+        # restore latest/best if step is not given
         if step is None:
-            step = self.mngr.latest_step()
+            if self.saving_criteria == "best":
+                step = self.mngr.best_step()
+            elif self.saving_criteria == "latest":
+                step = self.mngr.latest_step()
+            else:
+                raise ValueError(f"Unknown saving criteria: {self.saving_criteria}")
 
         # partition
         saveable_model, static_model = eqx.partition(
@@ -69,8 +89,14 @@ class Checkpointer:
         return model, opt_state
 
     def save(
-        self, step: int, model: AbstractDiffusionModel, opt_state: OptState
+        self,
+        step: int,
+        model: AbstractDiffusionModel,
+        opt_state: OptState,
+        value: float,
     ) -> None:
+        if jnp.isnan(value):
+            value = jnp.inf
         self.mngr.save(
             step,
             args=ocp.args.Composite(
@@ -83,4 +109,5 @@ class Checkpointer:
                     ),
                 }
             ),
+            metrics=value,
         )

@@ -13,60 +13,9 @@ from jaxtyping import Array, Key
 
 from .diffusion import AbstractDiffusionModel
 from .guidance import AbstractGuidance, GuidanceFree
-from .sdes import AbstractSDE
-from .utils import denormalize
 
 
-def edm_sampling_ts(
-    sde: AbstractSDE,
-    rho: float = 7.0,
-    N: int = 300,
-    t0: float = 1e-3,
-    t1: float = 1.0,
-):
-    sigma_max = sde.sigma(jnp.array([t1]))
-    sigma_min = sde.sigma(jnp.array([t0]))
-
-    sigmas = jnp.power(
-        jnp.power(sigma_max, (1 / rho))
-        + jnp.arange(N)
-        / (N - 1)
-        * (jnp.power(sigma_min, (1 / rho)) - jnp.power(sigma_max, (1 / rho))),
-        rho,
-    )
-
-    ts = jnp.array([sde.t(sigma_i) for sigma_i in sigmas])
-
-    # to bypass dfx.diffeqsolve's assertion
-    if abs(ts[0] - t1) < 1e-2 and abs(ts[-1] - t0) < 1e-4:
-        ts = ts.at[0].set(t1)
-        ts = ts.at[-1].set(t0)
-    else:
-        raise ValueError(
-            "ts must start at t1 and end at t0, but got [{}, {}].".format(ts[0], ts[-1])
-        )
-
-    return ts
-
-
-# samplers #
 class AbstractSampler:
-    dt0: Optional[float]
-    t0: float
-    t1: float
-
-    def __init__(
-        self,
-        dt0: Optional[float],
-        t0: float = 1e-3,
-        t1: float = 1.0,
-        *args,
-        **kwargs,
-    ):
-        self.dt0 = dt0
-        self.t0 = t0
-        self.t1 = t1
-
     @abstractmethod
     def single_sample(
         self,
@@ -84,8 +33,6 @@ class AbstractSampler:
         data_shape: Tuple[int, ...],
         conds: Optional[Array],
         key: Key,
-        norm_mean: Array,
-        norm_std: Array,
         num_samples: int,
         guidance: AbstractGuidance = GuidanceFree(),
     ) -> Array:
@@ -96,11 +43,318 @@ class AbstractSampler:
             data_shape,
             guidance,
         )
-        gen_samples = jax.vmap(sample_fn)(conds, sample_key)
-        return denormalize(gen_samples, norm_mean, norm_std, model.sigma_data)
+        return jax.vmap(sample_fn)(conds, sample_key)
 
 
-class ODESampler(AbstractSampler):
+class ConstantStepEulerMaruyamaSampler(AbstractSampler):
+    def __init__(
+        self,
+        dt0: float = 1e-3,
+        t0: float = 1e-3,
+        t1: float = 1.0,
+    ):
+        self.dt0 = dt0
+        self.t0 = t0
+        self.t1 = t1
+
+    @filter_jit
+    def single_sample(
+        self,
+        model: AbstractDiffusionModel,
+        data_shape: Tuple[int, ...],
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
+        key: Key,
+    ) -> Array:
+        def back_drift(t, x):
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            return f - g2 * score
+
+        def back_diffusion(t, x):
+            return model.sde.diffusion(t)
+
+        # pre-allocations
+        sigma_max = model.sde.sigma(jnp.array(self.t1))
+        x1 = jr.normal(key, data_shape) * sigma_max
+        total_time = self.t1 - self.t0
+        num_steps = np.ceil(total_time / self.dt0).astype(int)
+        dt = total_time / num_steps
+        t_array = jnp.linspace(self.t1, self.t0, num=num_steps + 1)
+        keys = jr.split(key, num_steps + 1)
+
+        # solve from t1 to t0
+        def euler_step(x, i):
+            t_i = t_array[i]
+            eta = jr.normal(keys[i], data_shape)
+            drift_val = back_drift(t_i, x)
+            diff_val = back_diffusion(t_i, x)
+            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
+            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            return x_next, ()  # (new_carry, output)
+
+        x, _ = jax.lax.scan(euler_step, x1, jnp.arange(num_steps))
+
+        return x
+
+
+class ScheduledEulerMaruyamaSampler(AbstractSampler):
+    def __init__(self, times: Array):
+        self.times = times
+
+    @filter_jit
+    def single_sample(
+        self,
+        model: AbstractDiffusionModel,
+        data_shape: Tuple[int, ...],
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
+        key: Key,
+    ) -> Array:
+        def back_drift(t, x):
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            return f - g2 * score
+
+        def back_diffusion(t, x):
+            return model.sde.diffusion(t)
+
+        # pre-allocations
+        sigma_max = model.sde.sigma(self.times[-1])
+        x1 = jr.normal(key, data_shape) * sigma_max
+        t_array = self.times[::-1]
+        num_steps = len(self.times) - 1
+        keys = jr.split(key, num_steps)
+
+        # solve from t1 to t0
+        def euler_step(x, i):
+            t_i = t_array[i]
+            eta = jr.normal(keys[i], data_shape)
+            drift_val = back_drift(t_i, x)
+            diff_val = back_diffusion(t_i, x)
+            dt = t_array[i - 1] - t_i
+            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
+            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            return x_next, ()  # (new_carry, output)
+
+        x, _ = jax.lax.scan(euler_step, x1, jnp.arange(1, num_steps + 1))
+
+        return x
+
+
+class ScheduledEulerSampler(AbstractSampler):
+    def __init__(self, times: Array):
+        self.times = times
+
+    @filter_jit
+    def single_sample(
+        self,
+        model: AbstractDiffusionModel,
+        data_shape: Tuple[int, ...],
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
+        key: Key,
+    ) -> Array:
+        def back_drift(t, x):
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            return f - 0.5 * g2 * score
+
+        def back_diffusion(t, x):
+            return model.sde.diffusion(t)
+
+        # pre-allocations
+        sigma_max = model.sde.sigma(self.times[-1])
+        x1 = jr.normal(key, data_shape) * sigma_max
+        t_array = self.times[::-1]
+        num_steps = len(self.times) - 1
+
+        # solve from t1 to t0
+        def euler_step(x, i):
+            t_i = t_array[i]
+            drift_val = back_drift(t_i, x)
+            dt = t_array[i - 1] - t_i
+            x_next = x + drift_val * (-dt)
+            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            return x_next, ()  # (new_carry, output)
+
+        x, _ = jax.lax.scan(euler_step, x1, jnp.arange(1, num_steps + 1))
+
+        return x
+
+
+class DebuggingEulerMaruyamaSampler(AbstractSampler):
+    def __init__(self, times: Array):
+        self.times = times
+
+    @filter_jit
+    def single_sample(
+        self,
+        model: AbstractDiffusionModel,
+        data_shape: Tuple[int, ...],
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
+        key: Key,
+    ) -> Array:
+        def back_drift(t, x):
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            return f - g2 * score
+
+        def back_diffusion(t, x):
+            return model.sde.diffusion(t)
+
+        # pre-allocations
+        sigma_max = model.sde.sigma(self.times[-1])
+        x1 = jr.normal(key, data_shape) * sigma_max
+        t_array = self.times[::-1]
+        num_steps = len(self.times) - 1
+        keys = jr.split(key, num_steps)
+        all_steps = jnp.zeros((num_steps + 1,) + data_shape)
+        all_steps = all_steps.at[0].set(x1)
+
+        # solve from t1 to t0
+        def euler_step(carry, i):
+            x, all_x = carry
+            t_i = t_array[i]
+            eta = jr.normal(keys[i - 1], data_shape)
+            drift_val = back_drift(t_i, x)
+            diff_val = back_diffusion(t_i, x)
+            dt = t_array[i - 1] - t_i
+            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
+            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            all_x = all_x.at[i].set(x_next)
+            return (x_next, all_x), x_next  # ((new_x, all_x), output_for_scan)
+
+        # initial carry contains both the current x and the array of all steps
+        (_, all_steps), _ = jax.lax.scan(
+            euler_step, (x1, all_steps), jnp.arange(1, num_steps + 1)
+        )
+
+        return all_steps
+
+
+class DebuggingEulerSampler(AbstractSampler):
+    def __init__(self, times: Array):
+        self.times = times
+
+    @filter_jit
+    def single_sample(
+        self,
+        model: AbstractDiffusionModel,
+        data_shape: Tuple[int, ...],
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
+        key: Key,
+    ) -> Array:
+        def back_drift(t, x):
+            f = model.sde.drift(x, t)
+            g2 = jnp.square(model.sde.diffusion(t))
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            return f - 0.5 * g2 * score
+
+        # pre-allocations
+        sigma_max = model.sde.sigma(self.times[-1])
+        x1 = jr.normal(key, data_shape) * sigma_max
+        t_array = self.times[::-1]
+        num_steps = len(self.times) - 1
+        all_steps = jnp.zeros((num_steps + 1,) + data_shape)
+        all_steps = all_steps.at[0].set(x1)
+
+        # solve from t1 to t0
+        def euler_step(carry, i):
+            x, all_x = carry
+            t_i = t_array[i]
+            drift_val = back_drift(t_i, x)
+            dt = t_array[i - 1] - t_i
+            x_next = x + drift_val * (-dt)
+            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            all_x = all_x.at[i].set(x_next)
+            return (x_next, all_x), x_next  # ((new_x, all_x), output_for_scan)
+
+        # initial carry contains both the current x and the array of all steps
+        (_, all_steps), _ = jax.lax.scan(
+            euler_step, (x1, all_steps), jnp.arange(1, num_steps + 1)
+        )
+
+        return all_steps
+
+
+# limamau: what is wrong here?
+class PredictorCorrectorSampler(AbstractSampler):
+    def __init__(
+        self,
+        t0: float = 1e-3,
+        t1: float = 1.0,
+        num_pred_steps: int = 4096,
+        num_correct_steps: int = 5,
+        tau: float = 0.25,
+    ):
+        self.t0 = jnp.array([t0])
+        self.t1 = jnp.array([t1])
+        self.num_pred_steps = num_pred_steps
+        self.num_correct_steps = num_correct_steps
+        self.tau = tau
+
+    @filter_jit
+    def single_sample(
+        self,
+        model: AbstractDiffusionModel,
+        data_shape: Tuple[int, ...],
+        guidance: AbstractGuidance,
+        conds: Optional[Array],
+        key: Key,
+    ) -> Array:
+        # prep
+        key, subkey = jr.split(key)
+        sigma_max = model.sde.sigma(self.t1)
+        x1 = jr.normal(subkey, data_shape) * sigma_max
+        dim_score = len(x1)
+        dt = (self.t1 - self.t0) / self.num_pred_steps
+
+        def correct_step(carry, _):
+            x, t, key = carry
+            key, subkey = jr.split(key)
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            norm2 = jnp.mean(jnp.square(score))
+            delta = self.tau * dim_score / norm2
+            noise = jr.normal(subkey, data_shape)
+            x = x + delta * score + jnp.sqrt(2 * delta) * noise
+            return (x, t, key), None
+
+        def correct_scan(x, t, key):
+            (x_final, _, key_final), _ = jax.lax.scan(
+                correct_step, (x, t, key), None, length=self.num_correct_steps
+            )
+            return x_final, key_final
+
+        def pred_step(carry, _):
+            x_curr, t_curr, key = carry
+            key, sub = jr.split(key)
+            t_next = t_curr - dt
+            s_ratio = model.sde.s(t_next) / model.sde.s(t_curr)
+            sigma_ratio = model.sde.sigma(t_next) / model.sde.sigma(t_curr)
+            sigma2 = jnp.square(model.sde.sigma(t_curr))
+            score_curr = guidance.apply_on_score(model, x_curr, t_curr, conds, key=None)
+            x_pred = s_ratio * x_curr + (s_ratio - sigma_ratio) * score_curr * sigma2
+
+            # corrector step
+            x_corr, key = correct_scan(x_pred, t_next, key)
+            x_corr = guidance.apply_on_x_next(model, x_corr, t_next, conds, key=None)
+            return (x_corr, t_next, key), None
+
+        # full scan
+        (x_final, t_next, _), _ = jax.lax.scan(
+            pred_step, (x1, self.t1, key), None, length=self.num_pred_steps
+        )
+        return x_final
+
+
+class ODEDiffraxSampler(AbstractSampler):
     solver: AbstractSolver
     stepsize_controller: AbstractStepSizeController
 
@@ -112,7 +366,9 @@ class ODESampler(AbstractSampler):
         solver: AbstractSolver = dfx.Tsit5(),
         stepsize_controller: AbstractStepSizeController = dfx.ConstantStepSize(),
     ):
-        super().__init__(dt0, t0, t1)
+        self.dt0 = dt0
+        self.t0 = t0
+        self.t1 = t1
         self.solver = solver
         self.stepsize_controller = stepsize_controller
 
@@ -128,13 +384,14 @@ class ODESampler(AbstractSampler):
         def fun(t, x, args):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(model, x, t, conds, key=None)
             return f - 0.5 * g2 * score
 
         term = dfx.ODETerm(fun)
 
         # solve from t1 to t0
-        x1 = jr.normal(key, data_shape)
+        sigma_max = model.sde.sigma(jnp.array(self.t1))
+        x1 = jr.normal(key, data_shape) * sigma_max
         dt0 = -self.dt0 if self.dt0 is not None else None
         sol = dfx.diffeqsolve(
             term,
@@ -148,114 +405,3 @@ class ODESampler(AbstractSampler):
 
         assert sol.ys is not None
         return sol.ys[0]
-
-
-class SDESampler(AbstractSampler):
-    solver: AbstractSolver
-    stepsize_controller: AbstractStepSizeController
-
-    def __init__(
-        self,
-        dt0: Optional[float],
-        t0: float = 1e-3,
-        t1: float = 1.0,
-        solver: AbstractSolver = dfx.Euler(),
-        stepsize_controller: AbstractStepSizeController = dfx.ConstantStepSize(),
-    ):
-        super().__init__(dt0, t0, t1)
-        self.solver = solver
-        self.stepsize_controller = stepsize_controller
-
-    @filter_jit
-    def single_sample(
-        self,
-        model: AbstractDiffusionModel,
-        data_shape: Tuple[int, ...],
-        guidance: AbstractGuidance,
-        conds: Optional[Array],
-        key: Key,
-    ) -> Array:
-        def back_drift(t, x, args):
-            f = model.sde.drift(x, t)
-            g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply(model, x, t, conds, key=key)
-            return f - g2 * score
-
-        def back_diffusion(t, x, args):
-            return model.sde.diffusion(t)
-
-        keys = jr.split(key, 2)
-        bm = dfx.VirtualBrownianTree(self.t0, 1.0, tol=1e-3, shape=(), key=keys[0])
-        terms = dfx.MultiTerm(
-            dfx.ODETerm(back_drift), dfx.ControlTerm(back_diffusion, bm)
-        )
-
-        # solve from t1 to t0
-        x1 = jr.normal(keys[1], data_shape)
-        back_dt0 = -self.dt0 if self.dt0 is not None else None
-        sol = dfx.diffeqsolve(
-            terms,
-            self.solver,
-            self.t1,
-            self.t0,
-            back_dt0,
-            x1,
-            stepsize_controller=self.stepsize_controller,
-        )
-
-        assert sol.ys is not None
-        return sol.ys[0]
-
-
-# the class below is basically a home-made implementation of the Euler-Maruyama solver,
-# which can be equally achived with the SDESampler class above using dfx.Euler()
-class EulerMaruyamaSampler(AbstractSampler):
-    def __init__(
-        self,
-        dt0: Optional[float] = 5e-3,
-        t0: float = 1e-3,
-        t1: float = 1.0,
-    ):
-        super().__init__(dt0, t0, t1)
-
-    @filter_jit
-    def single_sample(
-        self,
-        model: AbstractDiffusionModel,
-        data_shape: Tuple[int, ...],
-        guidance: AbstractGuidance,
-        conds: Optional[Array],
-        key: Key,
-    ) -> Array:
-        if self.dt0 is None:
-            raise ValueError("dt0 must be provided for Euler–Maruyama sampling.")
-
-        def back_drift(t, x):
-            f = model.sde.drift(x, t)
-            g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply(model, x, t, conds, key=key)
-            return f - g2 * score
-
-        def back_diffusion(t, x):
-            return model.sde.diffusion(t)
-
-        # pre-allocations
-        x1 = jr.normal(key, data_shape)
-        total_time = self.t1 - self.t0
-        num_steps = np.ceil(total_time / self.dt0).astype(int)
-        dt = total_time / num_steps
-        t_array = jnp.linspace(self.t1, self.t0, num=num_steps + 1)
-        keys = jr.split(key, num_steps + 1)
-
-        # solve from t1 to t0
-        def euler_step(x, i):
-            t_i = t_array[i]
-            eta = jr.normal(keys[i], data_shape)
-            drift_val = back_drift(t_i, x)
-            diff_val = back_diffusion(t_i, x)
-            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
-            return x_next, ()  # (new_carry, output)
-
-        x, _ = jax.lax.scan(euler_step, x1, jnp.arange(num_steps))
-
-        return x

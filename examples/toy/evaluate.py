@@ -8,7 +8,8 @@ from configs import get_config
 from reference import get_joint
 
 from confusion.checkpointing import Checkpointer
-from confusion.utils import normalize
+from confusion.guidance import MomentMatchingGuidance
+from confusion.utils import denormalize, normalize
 
 FIGSIZE = (7, 3)
 BINS = 20
@@ -33,7 +34,6 @@ def main(args):
     seed = config.seed
     model = config.model
     opt = config.opt
-    sigma_data = config.sigma_data
     saving_path = config.saving_path
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
@@ -41,23 +41,34 @@ def main(args):
     evaluate_key = config.evaluate_key
     conds = config.conds
     num_variables = config.num_variables
+    const_matrix = config.const_matrix
+    y = config.y
+
     do_A = config.do_A
     sampler = config.sampler
-    guidance = config.guidance
 
     # generate samples
     key = jr.PRNGKey(seed)
     ref_A, ref_B = get_joint(sample_size, key)
     ref_samples = jnp.concatenate([ref_A, ref_B], axis=1)
-    ref_samples, ref_samples_mean, ref_samples_std = normalize(
-        ref_samples, sigma_data=sigma_data
+    ref_samples, ref_samples_mean, ref_samples_std = normalize(ref_samples)
+    print("ref mean:", ref_samples_mean)
+    print("ref std:", ref_samples_std)
+
+    # define guidances
+    y, _, _ = normalize(
+        y,
+        ref_samples_mean,
+        ref_samples_std,
     )
+    guidance = MomentMatchingGuidance(const_matrix, y)
 
     # get checkpointer to restore
     ckpter = Checkpointer(
         saving_path,
         max_save_to_keep,
         save_every,
+        saving_criteria="best",
     )
 
     # restore
@@ -85,10 +96,9 @@ def main(args):
         ref_samples.shape[1:],
         conds,
         evaluate_key,
-        ref_samples_mean,
-        ref_samples_std,
         sample_size,
     )
+    gen_samples = denormalize(gen_samples, ref_samples_mean, ref_samples_std)
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
     title = "No intervention - diffusion model"
@@ -109,11 +119,11 @@ def main(args):
     plt.figure(figsize=FIGSIZE)
     plt.subplot(1, 2, 1)
     ref_A, ref_B = get_joint(sample_size, key, do_A=do_A)
-    print("Do(B={}) - reference".format(do_A))
+    print("Do(A={}) - reference".format(do_A))
     print_mean_and_variance(ref_A, ref_B)
     plt.hist(ref_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
     plt.hist(ref_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
-    plt.title("Do(B={}) - reference".format(do_A))
+    plt.title("Do(A={}) - reference".format(do_A))
     plt.xlim(*XLIM)
     plt.ylim(*YLIM)
     plt.legend()
@@ -126,14 +136,12 @@ def main(args):
         ref_samples.shape[1:],
         conds,
         evaluate_key,
-        ref_samples_mean,
-        ref_samples_std,
         sample_size,
         guidance=guidance,
     )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
-    print("Do(B={}) - diffusion model".format(do_A))
+    print("Do(A={}) - diffusion model".format(do_A))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B)
     plt.hist(gen_A.flatten(), bins=BINS, alpha=ALPHA, label="A")

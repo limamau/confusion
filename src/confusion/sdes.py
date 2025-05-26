@@ -45,47 +45,72 @@ class AbstractSDE:
         return self.s(t) * x0, self.sigma(t)
 
 
-class VariancePreserving(AbstractSDE):
-    beta_min_bar: float
-    beta_max_bar: float
+class SubVariancePreserving(AbstractSDE):
+    beta_min: float
+    beta_max: float
 
     def __init__(
         self,
-        beta_min_bar: float,
-        beta_max_bar: float,
+        beta_min: float,
+        beta_max: float,
     ):
-        self.beta_min_bar = beta_min_bar
-        self.beta_max_bar = beta_max_bar
+        self.beta_min = beta_min
+        self.beta_max = beta_max
+
+    def _alpha(self, t: Array) -> Array:
+        return 0.5 * t**2 * (self.beta_max - self.beta_min) + t * self.beta_min
+
+    def _beta(self, t: Array) -> Array:
+        return self.beta_min + t * (self.beta_max - self.beta_min)
 
     def s(self, t: Array) -> Array:
-        return jnp.exp(
-            -0.25 * t**2 * (self.beta_max_bar - self.beta_min_bar)
-            - 0.5 * t * self.beta_min_bar
-        )
+        return jnp.exp(-0.5 * self._alpha(t))
 
     def sigma(self, t: Array) -> Array:
-        return jnp.sqrt(
-            1
-            - jnp.exp(
-                -0.5 * t**2 * (self.beta_max_bar - self.beta_min_bar)
-                - t * self.beta_min_bar
-            )
-        )
+        return 1 - jnp.exp(-self._alpha(t))
 
     def t(self, sigma: Array) -> Array:
-        return (
-            jnp.sqrt(
-                self.beta_min_bar**2
-                - 2 * (self.beta_max_bar - self.beta_min_bar) * jnp.log(1 - sigma**2)
-            )
-            - self.beta_min_bar
-        ) / (self.beta_max_bar - self.beta_min_bar)
+        raise NotImplementedError
 
     def diffusion(self, t: Array) -> Array:
-        return jnp.sqrt(self.beta_max_bar + t * (self.beta_max_bar - self.beta_min_bar))
+        return jnp.sqrt(self._beta(t) * (1 - jnp.exp(-2 * self._alpha(t))))
 
     def drift(self, x: Array, t: Array) -> Array:
-        return -0.5 * (self.beta_min_bar + t * (self.beta_max_bar - self.beta_min_bar))
+        return -0.5 * self._beta(t) * x
+
+
+class VariancePreserving(AbstractSDE):
+    beta_min: float
+    beta_max: float
+
+    def __init__(
+        self,
+        beta_min: float,
+        beta_max: float,
+    ):
+        self.beta_min = beta_min
+        self.beta_max = beta_max
+
+    def _alpha(self, t: Array) -> Array:
+        return 0.5 * (t**2) * (self.beta_max - self.beta_min) + t * self.beta_min
+
+    def _beta(self, t: Array) -> Array:
+        return self.beta_min + t * (self.beta_max - self.beta_min)
+
+    def s(self, t: Array) -> Array:
+        return jnp.exp(-0.5 * self._alpha(t))
+
+    def sigma(self, t: Array) -> Array:
+        return jnp.sqrt(1 - jnp.exp(-self._alpha(t)))
+
+    def t(self, sigma: Array) -> Array:
+        raise NotImplementedError
+
+    def diffusion(self, t: Array) -> Array:
+        return jnp.sqrt(self._beta(t))
+
+    def drift(self, x: Array, t: Array) -> Array:
+        return -0.5 * self._beta(t) * x
 
 
 class VarianceExploding(AbstractSDE):

@@ -5,10 +5,10 @@ import jax.random as jr
 import optax
 
 from confusion.diffusion import StandardDiffusionModel
-from confusion.guidance import GuidanceFree, MomentMatchingGuidance
 from confusion.losses import ScoreMatchingLoss, StandardWeighting
 from confusion.networks import MultiLayerPerceptron
-from confusion.sampling import EulerMaruyamaSampler
+from confusion.sampling import ConstantStepEulerMaruyamaSampler
+from confusion.schedules import LinearTimeSchedule
 from confusion.sdes import VariancePreserving
 
 
@@ -41,8 +41,6 @@ class Config:
     )
 
     # 4. sde
-    t0 = 0.1
-    t1 = 1.0
     beta_min_bar = 0.1
     beta_max_bar = 0.5
     sde = VariancePreserving(
@@ -55,6 +53,8 @@ class Config:
     model = StandardDiffusionModel(network, sde)
 
     # 6. optimization
+    t0_training = 1e-5
+    t1 = 1.0
     num_steps = 10_000
     lr = 1e-3
     train_batch_size = 32
@@ -74,19 +74,17 @@ class Config:
     eval_every = 5000
 
     # 8. sampling
+    t0_sampling = 1e-3
+    time_schedule = LinearTimeSchedule()
     dt0 = 0.005
     sample_size = 1000
     conds = None
-    sampler = EulerMaruyamaSampler(dt0, t0=t0, t1=t1)
+    sampler = ConstantStepEulerMaruyamaSampler(dt0, t0=t0_sampling, t1=t1)
 
     # 9. guidance
     # 9.1 no guidance
-    guidance_free = GuidanceFree()
+    # need no parameters
     # 9.2 moment matching
     do_A = 1.0
-    const_matrix = jnp.array([[do_A, 0.0]])
+    const_matrix = jnp.array([[1.0, 0.0]])
     y = jnp.array([do_A])
-    guidance = MomentMatchingGuidance(
-        const_matrix,
-        y,
-    )

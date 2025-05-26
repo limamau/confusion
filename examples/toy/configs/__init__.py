@@ -1,19 +1,19 @@
 from argparse import Namespace
 from typing import Union
 
-from . import edm, ve, vp
+from . import ve, vp
 
 
 def get_config(
     args: Namespace,
 ) -> Union[
-    edm.Config,
+    # edm.Config,
     ve.Config,
     vp.Config,
 ]:
-    if args.config == "edm":
-        return edm.Config()
-    elif args.config == "ve":
+    # if args.config == "edm":
+    #     return edm.Config()
+    if args.config == "ve":
         return ve.Config()
     elif args.config == "vp":
         return vp.Config()

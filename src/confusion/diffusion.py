@@ -10,12 +10,9 @@ from .sdes import AbstractSDE
 
 
 class AbstractDiffusionModel(eqx.Module):
-    network: AbstractNetwork
     sde: AbstractSDE
-    sigma_data: float
 
-    def __init__(self, network: AbstractNetwork, sde: AbstractSDE):
-        self.network = network
+    def __init__(self, sde: AbstractSDE):
         self.sde = sde
 
     @abstractmethod
@@ -31,10 +28,11 @@ class AbstractDiffusionModel(eqx.Module):
 
 
 class StandardDiffusionModel(AbstractDiffusionModel):
-    sigma_data: float = 1.0
+    network: AbstractNetwork
 
     def __init__(self, network: AbstractNetwork, sde: AbstractSDE):
-        super().__init__(network, sde)
+        self.network = network
+        super().__init__(sde)
 
     def score(
         self,
@@ -44,14 +42,16 @@ class StandardDiffusionModel(AbstractDiffusionModel):
         *,
         key: Optional[Key] = None,
     ) -> Array:
-        return self.network(x, t, c, key=key)
+        return self.network(x, t, c, key=key) / self.sde.sigma(t)
 
 
 class EDMDiffusionModel(AbstractDiffusionModel):
     sigma_data: float
+    network: AbstractNetwork
 
     def __init__(self, network: AbstractNetwork, sde: AbstractSDE, sigma_data: float):
-        super().__init__(network, sde)
+        self.network = network
+        super().__init__(sde)
         self.sigma_data = sigma_data
 
     def score(
