@@ -8,7 +8,7 @@ from configs import get_config
 from reference import get_joint
 
 from confusion.checkpointing import Checkpointer
-from confusion.guidance import MomentMatchingGuidance
+from confusion.guidance import SecondOrderConstantMomentMatchingGuidance
 from confusion.utils import denormalize, normalize
 
 FIGSIZE = (7, 3)
@@ -34,24 +34,27 @@ def main(args):
     seed = config.seed
     model = config.model
     opt = config.opt
+    sigma_data = config.sigma_data
     saving_path = config.saving_path
     max_save_to_keep = config.max_save_to_keep
     save_every = config.save_every
     sample_size = config.sample_size
     evaluate_key = config.evaluate_key
-    conds = config.conds
+    pre_conds = config.conds
     num_variables = config.num_variables
     const_matrix = config.const_matrix
     y = config.y
 
-    do_A = config.do_A
+    a = config.a
     sampler = config.sampler
 
     # generate samples
     key = jr.PRNGKey(seed)
     ref_A, ref_B = get_joint(sample_size, key)
     ref_samples = jnp.concatenate([ref_A, ref_B], axis=1)
-    ref_samples, ref_samples_mean, ref_samples_std = normalize(ref_samples)
+    ref_samples, ref_samples_mean, ref_samples_std = normalize(
+        ref_samples, imposed_std=sigma_data
+    )
     print("ref mean:", ref_samples_mean)
     print("ref std:", ref_samples_std)
 
@@ -60,8 +63,11 @@ def main(args):
         y,
         ref_samples_mean,
         ref_samples_std,
+        imposed_std=sigma_data,
     )
-    guidance = MomentMatchingGuidance(const_matrix, y)
+    print("y:", y)
+    guidance = SecondOrderConstantMomentMatchingGuidance(const_matrix)
+    post_conds = jnp.repeat(y[:, None], sample_size, axis=0)
 
     # get checkpointer to restore
     ckpter = Checkpointer(
@@ -94,11 +100,14 @@ def main(args):
     gen_samples = sampler.sample(
         model,
         ref_samples.shape[1:],
-        conds,
+        pre_conds,
+        post_conds,
         evaluate_key,
         sample_size,
     )
-    gen_samples = denormalize(gen_samples, ref_samples_mean, ref_samples_std)
+    gen_samples = denormalize(
+        gen_samples, ref_samples_mean, ref_samples_std, imposed_std=sigma_data
+    )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
     title = "No intervention - diffusion model"
@@ -115,15 +124,15 @@ def main(args):
     plt.tight_layout()
     plt.show()
 
-    # do(B) intervention - reference
+    # condtional - reference
     plt.figure(figsize=FIGSIZE)
     plt.subplot(1, 2, 1)
-    ref_A, ref_B = get_joint(sample_size, key, do_A=do_A)
-    print("Do(A={}) - reference".format(do_A))
+    ref_A, ref_B = get_joint(sample_size, key, a=a)
+    print("A={} - reference".format(a))
     print_mean_and_variance(ref_A, ref_B)
     plt.hist(ref_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
     plt.hist(ref_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
-    plt.title("Do(A={}) - reference".format(do_A))
+    plt.title("A={} - reference".format(a))
     plt.xlim(*XLIM)
     plt.ylim(*YLIM)
     plt.legend()
@@ -134,19 +143,23 @@ def main(args):
     gen_samples = sampler.sample(
         model,
         ref_samples.shape[1:],
-        conds,
+        pre_conds,
+        post_conds,
         evaluate_key,
         sample_size,
         guidance=guidance,
     )
+    gen_samples = denormalize(
+        gen_samples, ref_samples_mean, ref_samples_std, imposed_std=sigma_data
+    )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
-    print("Do(A={}) - diffusion model".format(do_A))
+    print("A={} - diffusion model".format(a))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B)
     plt.hist(gen_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
     plt.hist(gen_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
-    plt.title("Do(B={}) - diffusion model".format(do_A))
+    plt.title("A={} - diffusion model".format(a))
     plt.xlim(*XLIM)
     plt.ylim(*YLIM)
     plt.legend()

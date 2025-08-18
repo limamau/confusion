@@ -5,17 +5,17 @@ import jax.random as jr
 import optax
 
 from confusion.diffusion import StandardDiffusionModel
-from confusion.losses import ScoreMatchingLoss, StandardWeighting
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ConstantStepEulerMaruyamaSampler
-from confusion.schedules import PowerTimeSchedule
-from confusion.sdes import VarianceExploding
+from confusion.schedules import LinearTimeSchedule
+from confusion.sdes import VariancePreserving
+from confusion.weighting import SquaredWeighting
 
 
 class Config:
-    """Configuration for Variance Exploding."""
+    """Configuration for Variance Preserving."""
 
-    name = "ve"
+    name = "vp"
 
     # 1. keys
     seed = 5678
@@ -28,8 +28,8 @@ class Config:
     # 3. network
     num_variables = 2
     hidden_size = 256
-    proj_size = 64
-    proj_scale = 1.0
+    proj_size = 32
+    proj_scale = 5.0
     is_conditional = False
     network = MultiLayerPerceptron(
         proj_size,
@@ -41,18 +41,17 @@ class Config:
     )
 
     # 4. sde
-    sigma_min = 0.05
-    sigma_max = 2.0
-    is_approximate = False
-    sde = VarianceExploding(
-        sigma_min,
-        sigma_max,
-        is_approximate=is_approximate,
+    beta_min_bar = 0.1
+    beta_max_bar = 0.5
+    sde = VariancePreserving(
+        beta_min_bar,
+        beta_max_bar,
     )
 
     # 5. diffusion model
     sigma_data = 1.0  # for completeness, but not used
-    model = StandardDiffusionModel(network, sde)
+    weighting = SquaredWeighting(sde)
+    model = StandardDiffusionModel(network, weighting, sde)
 
     # 6. optimization
     t0_training = 1e-5
@@ -61,10 +60,8 @@ class Config:
     lr = 1e-3
     train_batch_size = 32
     opt = optax.adam(lr)
-    weighting = StandardWeighting(sde)
-    loss = ScoreMatchingLoss(weighting)
 
-    # 7. logging and checkpointing
+    # 7. logging, evaluating and checkpointing
     print_loss_every = 1000
     max_save_to_keep = 1
     save_every = 5000
@@ -76,14 +73,17 @@ class Config:
     eval_every = 5000
 
     # 8. sampling
-    t0_sampling = 1e-2
-    time_schedule = PowerTimeSchedule()
-    dt0 = 0.001
+    t0_sampling = 1e-3
+    time_schedule = LinearTimeSchedule()
+    dt0 = 0.005
     sample_size = 1000
     conds = None
     sampler = ConstantStepEulerMaruyamaSampler(dt0, t0=t0_sampling, t1=t1)
 
     # 9. guidance
-    do_A = 1.0
+    # 9.1 no guidance
+    # need no parameters
+    # 9.2 moment matching
+    a = 1.0
     const_matrix = jnp.array([[1.0, 0.0]])
-    y = jnp.array([do_A])
+    y = jnp.array([a])

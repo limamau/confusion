@@ -8,10 +8,10 @@ from jaxtyping import Array, Key
 from .diffusion import AbstractDiffusionModel
 from .guidance import AbstractGuidance, GuidanceFree
 from .logging import AbstractLogger
-from .losses import AbstractLoss
 from .metrics import AbstractMetric
 from .sampling import AbstractSampler
 from .schedules import AbstractTimeSchedule
+from .utils import batch_avg_loss
 from .utils import dataloader as utilsdataloader
 
 
@@ -86,7 +86,6 @@ class AbstractEvaluator:
         model: AbstractDiffusionModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
-        loss: AbstractLoss,
         t0: float,
         t1: float,
         time_schedule: AbstractTimeSchedule,
@@ -135,7 +134,6 @@ class LossOnlyEvaluator(AbstractEvaluator):
         model: AbstractDiffusionModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
-        loss: AbstractLoss,
         t0: float,
         t1: float,
         time_schedule: AbstractTimeSchedule,
@@ -148,7 +146,7 @@ class LossOnlyEvaluator(AbstractEvaluator):
         batch_size = data.shape[0]
         losskeys = jr.split(losskey, batch_size)
         times = time_schedule(t0, t1, batch_size)
-        value = loss(model, data, times, conds, losskeys).item()
+        value = batch_avg_loss(model, data, times, conds, losskeys).item()
         logger.log_step(step, value, "Eval loss", pre_str="+ ")
 
         # update evals
@@ -204,7 +202,6 @@ class GuidanceFreeEvaluator(AbstractEvaluator):
         model: AbstractDiffusionModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
-        loss: AbstractLoss,
         t0: float,
         t1: float,
         time_schedule: AbstractTimeSchedule,
@@ -217,7 +214,7 @@ class GuidanceFreeEvaluator(AbstractEvaluator):
         batch_size = data.shape[0]
         losskeys = jr.split(losskey, batch_size)
         times = time_schedule(t0, t1, batch_size)
-        value = loss(model, data, times, conds, losskeys).item()
+        value = batch_avg_loss(model, data, times, conds, losskeys).item()
         logger.log_step(step, value, "Eval loss", pre_str="+ ")
 
     def sampling_eval(
@@ -238,7 +235,8 @@ class GuidanceFreeEvaluator(AbstractEvaluator):
         gen_samples = self.sampler.sample(
             model=model,
             data_shape=data.shape[1:],
-            conds=conds,
+            pre_conds=conds,
+            post_conds=None,
             key=key,
             num_samples=data.shape[0],
         )
@@ -309,7 +307,6 @@ class MeanGuidancesAndMetricsEvaluator(AbstractEvaluator):
         model: AbstractDiffusionModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
-        loss: AbstractLoss,
         t0: float,
         t1: float,
         time_schedule: AbstractTimeSchedule,
@@ -323,7 +320,7 @@ class MeanGuidancesAndMetricsEvaluator(AbstractEvaluator):
         batch_size = data[0].shape[0]
         losskeys = jr.split(losskey, batch_size)
         times = time_schedule(t0, t1, batch_size)
-        value = loss(model, data[0], times, conds, losskeys).item()
+        value = batch_avg_loss(model, data[0], times, conds, losskeys).item()
         logger.log_step(step, value, "Eval loss", pre_str="+ ")
 
     def sampling_eval(
@@ -345,7 +342,8 @@ class MeanGuidancesAndMetricsEvaluator(AbstractEvaluator):
             gen_samples = self.sampler.sample(
                 model=model,
                 data_shape=data[i].shape[1:],
-                conds=conds,
+                pre_conds=conds,
+                post_conds=None,
                 key=key,
                 num_samples=data[i].shape[0],
                 guidance=guidance,

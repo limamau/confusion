@@ -14,16 +14,6 @@ class AbstractSDE:
     def sigma(self, t: Array) -> Array:
         raise NotImplementedError
 
-    # the following should be the inverse of sigma(t)
-    # but I found no straight forward way to do this
-    # automatically from sigma(t) using jax so it'll
-    # stay as an abstract method which has to be implemented
-    # in all instances of this class for now;
-    # this is supposed to be used by the EDMStepSizeController
-    @abstractmethod
-    def t(self, sigma: Array) -> Array:
-        raise NotImplementedError
-
     # in practice, it's probably better to override this method
     # in order to provide a more efficient implementation
     def diffusion(self, t: Array) -> Array:
@@ -69,9 +59,6 @@ class SubVariancePreserving(AbstractSDE):
     def sigma(self, t: Array) -> Array:
         return 1 - jnp.exp(-self._alpha(t))
 
-    def t(self, sigma: Array) -> Array:
-        raise NotImplementedError
-
     def diffusion(self, t: Array) -> Array:
         return jnp.sqrt(self._beta(t) * (1 - jnp.exp(-2 * self._alpha(t))))
 
@@ -102,9 +89,6 @@ class VariancePreserving(AbstractSDE):
 
     def sigma(self, t: Array) -> Array:
         return jnp.sqrt(1 - jnp.exp(-self._alpha(t)))
-
-    def t(self, sigma: Array) -> Array:
-        raise NotImplementedError
 
     def diffusion(self, t: Array) -> Array:
         return jnp.sqrt(self._beta(t))
@@ -137,7 +121,7 @@ class VarianceExploding(AbstractSDE):
         else:
             self.sigma_fn = lambda t: sigma_min * jnp.sqrt(
                 jnp.pow(sigma_max / sigma_min, 2 * t) - 1
-            )  # limamau: somehow using t instead of 2t leads to better results...
+            )
             self.t_fn = lambda sigma: jnp.log(sigma**2 / sigma_min**2 + 1) / (
                 2 * jnp.log(sigma_max / sigma_min)
             )
@@ -147,9 +131,6 @@ class VarianceExploding(AbstractSDE):
 
     def sigma(self, t: Array) -> Array:
         return self.sigma_fn(t)
-
-    def t(self, sigma: Array) -> Array:
-        return self.t_fn(sigma)
 
     def diffusion(self, t: Array) -> Array:
         log_ratio = jnp.sqrt(2 * jnp.log(self.sigma_max / self.sigma_min))

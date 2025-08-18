@@ -1,3 +1,4 @@
+import functools as ft
 import time
 from typing import Callable, Optional, Tuple, Union
 
@@ -12,23 +13,22 @@ from .checkpointing import Checkpointer
 from .diffusion import AbstractDiffusionModel
 from .evaluation import AbstractEvaluator, BestEval, LossOnlyEvaluator
 from .logging import AbstractLogger, PrintOnlyLogger
-from .losses import AbstractLoss
 from .schedules import AbstractTimeSchedule, LinearTimeSchedule
-from .utils import dataloader
+from .utils import batch_avg_loss, dataloader
 
 
 def update_ema(
     ema_model: AbstractDiffusionModel, model: AbstractDiffusionModel, ema_rate: float
 ) -> AbstractDiffusionModel:
     # get model parameters
-    ema_params = eqx.filter(ema_model, eqx.is_array)
-    params = eqx.filter(model, eqx.is_array)
+    ema_params = eqx.filter(ema_model, eqx.is_inexact_array)
+    params = eqx.filter(model, eqx.is_inexact_array)
 
     def ema_update(ema_p, p):
         return ema_rate * ema_p + (1 - ema_rate) * p
 
     # update model params
-    new_ema_params = jax.tree_map(ema_update, ema_params, params)
+    new_ema_params = jax.tree.map(ema_update, ema_params, params)
     updated_ema_model = eqx.combine(new_ema_params, ema_model)
 
     return updated_ema_model
@@ -43,18 +43,18 @@ def make_step(
     key: Key,
     opt_state: OptState,
     opt_update: Callable,
-    loss: AbstractLoss,
     t0: float,
     t1: float,
     ema_rate: float,
     time_schedule: AbstractTimeSchedule,
 ) -> Tuple[Array, AbstractDiffusionModel, AbstractDiffusionModel, Key, OptState]:
-    filtered_loss = eqx.filter_value_and_grad(loss)
+    filtered_value_and_grad = eqx.filter_value_and_grad(batch_avg_loss)
+    model_value_and_grad = ft.partial(filtered_value_and_grad, model)
     batch_size = data.shape[0]
     newkey, tkey, losskey = jr.split(key, 3)
     losskeys = jr.split(losskey, batch_size)
     times = time_schedule(t0, t1, batch_size, tkey)
-    step_loss, grads = filtered_loss(model, data, times, conds, losskeys)
+    step_loss, grads = model_value_and_grad(data, times, conds, losskeys)
     updates, opt_state = opt_update(grads, opt_state)
     model = eqx.apply_updates(model, updates)
     ema_model = update_ema(ema_model, model, ema_rate)
@@ -64,7 +64,6 @@ def make_step(
 def train(
     model: AbstractDiffusionModel,
     opt: GradientTransformation,
-    loss: AbstractLoss,
     train_data: Array,
     eval_data: Union[Array, Tuple[Array, ...]],
     # train int args
@@ -92,8 +91,8 @@ def train(
     # prep for checkpointing
     if ckpter is not None:
         if ckpter.saving_criteria == "best":
-            assert eval_every == ckpter.save_every, (
-                "If saving based on best metric, `eval_every` must be equal to `save_every`"
+            assert ckpter.save_every % eval_every == 0, (
+                "If saving based on best metric, `eval_every` must be a multiple of `save_every`"
             )
 
     # optax will update the floating-point JAX arrays in the model
@@ -127,7 +126,6 @@ def train(
             train_key,
             opt_state,
             opt.update,
-            loss,
             t0,
             t1,
             ema_rate,
@@ -159,7 +157,6 @@ def train(
                 ema_model,
                 eval_data_batch,
                 eval_conds_batch,
-                loss,
                 t0,
                 t1,
                 time_schedule,

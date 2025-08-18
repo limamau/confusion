@@ -22,7 +22,8 @@ class AbstractSampler:
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         raise NotImplementedError
@@ -31,7 +32,8 @@ class AbstractSampler:
         self,
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
         num_samples: int,
         guidance: AbstractGuidance = GuidanceFree(),
@@ -43,7 +45,7 @@ class AbstractSampler:
             data_shape,
             guidance,
         )
-        return jax.vmap(sample_fn)(conds, sample_key)
+        return jax.vmap(sample_fn)(pre_conds, post_conds, sample_key)
 
 
 class ConstantStepEulerMaruyamaSampler(AbstractSampler):
@@ -63,13 +65,16 @@ class ConstantStepEulerMaruyamaSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         def back_drift(t, x):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             return f - g2 * score
 
         def back_diffusion(t, x):
@@ -91,7 +96,9 @@ class ConstantStepEulerMaruyamaSampler(AbstractSampler):
             drift_val = back_drift(t_i, x)
             diff_val = back_diffusion(t_i, x)
             x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
-            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            x_next = guidance.apply_on_x_next(
+                model, x_next, t_i, pre_conds, post_conds, key=None
+            )
             return x_next, ()  # (new_carry, output)
 
         x, _ = jax.lax.scan(euler_step, x1, jnp.arange(num_steps))
@@ -109,13 +116,16 @@ class ScheduledEulerMaruyamaSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         def back_drift(t, x):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             return f - g2 * score
 
         def back_diffusion(t, x):
@@ -136,7 +146,9 @@ class ScheduledEulerMaruyamaSampler(AbstractSampler):
             diff_val = back_diffusion(t_i, x)
             dt = t_array[i - 1] - t_i
             x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
-            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            x_next = guidance.apply_on_x_next(
+                model, x_next, t_i, pre_conds, post_conds, key=None
+            )
             return x_next, ()  # (new_carry, output)
 
         x, _ = jax.lax.scan(euler_step, x1, jnp.arange(1, num_steps + 1))
@@ -154,13 +166,16 @@ class ScheduledEulerSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         def back_drift(t, x):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             return f - 0.5 * g2 * score
 
         def back_diffusion(t, x):
@@ -178,7 +193,9 @@ class ScheduledEulerSampler(AbstractSampler):
             drift_val = back_drift(t_i, x)
             dt = t_array[i - 1] - t_i
             x_next = x + drift_val * (-dt)
-            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            x_next = guidance.apply_on_x_next(
+                model, x_next, t_i, pre_conds, post_conds, key=None
+            )
             return x_next, ()  # (new_carry, output)
 
         x, _ = jax.lax.scan(euler_step, x1, jnp.arange(1, num_steps + 1))
@@ -196,13 +213,16 @@ class DebuggingEulerMaruyamaSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         def back_drift(t, x):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             return f - g2 * score
 
         def back_diffusion(t, x):
@@ -226,7 +246,9 @@ class DebuggingEulerMaruyamaSampler(AbstractSampler):
             diff_val = back_diffusion(t_i, x)
             dt = t_array[i - 1] - t_i
             x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
-            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            x_next = guidance.apply_on_x_next(
+                model, x_next, t_i, pre_conds, post_conds, key=None
+            )
             all_x = all_x.at[i].set(x_next)
             return (x_next, all_x), x_next  # ((new_x, all_x), output_for_scan)
 
@@ -248,13 +270,16 @@ class DebuggingEulerSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         def back_drift(t, x):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             return f - 0.5 * g2 * score
 
         # pre-allocations
@@ -272,7 +297,9 @@ class DebuggingEulerSampler(AbstractSampler):
             drift_val = back_drift(t_i, x)
             dt = t_array[i - 1] - t_i
             x_next = x + drift_val * (-dt)
-            x_next = guidance.apply_on_x_next(model, x_next, t_i, conds, key=None)
+            x_next = guidance.apply_on_x_next(
+                model, x_next, t_i, pre_conds, post_conds, key=None
+            )
             all_x = all_x.at[i].set(x_next)
             return (x_next, all_x), x_next  # ((new_x, all_x), output_for_scan)
 
@@ -306,7 +333,8 @@ class PredictorCorrectorSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         # prep
@@ -319,7 +347,9 @@ class PredictorCorrectorSampler(AbstractSampler):
         def correct_step(carry, _):
             x, t, key = carry
             key, subkey = jr.split(key)
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             norm2 = jnp.mean(jnp.square(score))
             delta = self.tau * dim_score / norm2
             noise = jr.normal(subkey, data_shape)
@@ -339,12 +369,16 @@ class PredictorCorrectorSampler(AbstractSampler):
             s_ratio = model.sde.s(t_next) / model.sde.s(t_curr)
             sigma_ratio = model.sde.sigma(t_next) / model.sde.sigma(t_curr)
             sigma2 = jnp.square(model.sde.sigma(t_curr))
-            score_curr = guidance.apply_on_score(model, x_curr, t_curr, conds, key=None)
+            score_curr = guidance.apply_on_score(
+                model, x_curr, t_curr, pre_conds, post_conds, key=None
+            )
             x_pred = s_ratio * x_curr + (s_ratio - sigma_ratio) * score_curr * sigma2
 
             # corrector step
             x_corr, key = correct_scan(x_pred, t_next, key)
-            x_corr = guidance.apply_on_x_next(model, x_corr, t_next, conds, key=None)
+            x_corr = guidance.apply_on_x_next(
+                model, x_corr, t_next, pre_conds, post_conds, key=key
+            )
             return (x_corr, t_next, key), None
 
         # full scan
@@ -378,13 +412,16 @@ class ODEDiffraxSampler(AbstractSampler):
         model: AbstractDiffusionModel,
         data_shape: Tuple[int, ...],
         guidance: AbstractGuidance,
-        conds: Optional[Array],
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
         key: Key,
     ) -> Array:
         def fun(t, x, args):
             f = model.sde.drift(x, t)
             g2 = jnp.square(model.sde.diffusion(t))
-            score = guidance.apply_on_score(model, x, t, conds, key=None)
+            score = guidance.apply_on_score(
+                model, x, t, pre_conds, post_conds, key=None
+            )
             return f - 0.5 * g2 * score
 
         term = dfx.ODETerm(fun)

@@ -19,7 +19,6 @@ def main(args):
     train_batch_size = config.train_batch_size
     model = config.model
     opt = config.opt
-    loss = config.loss
     print_loss_every = config.print_loss_every
     eval_batch_size = config.eval_batch_size
     eval_every = config.eval_every
@@ -30,16 +29,19 @@ def main(args):
     t0 = config.t0_training
     t1 = config.t1
     time_schedule = config.time_schedule
+    sigma_data = config.sigma_data
 
     # generate training and validation samples
     key = jr.PRNGKey(seed)
     keys = jr.split(key, 3)
     A, B = get_joint(num_samples, keys[0])
     train_data = jnp.concatenate([A, B], axis=1)
-    train_data, train_mean, train_std = normalize(train_data)
+    train_data, train_mean, train_std = normalize(train_data, imposed_std=sigma_data)
     A, B = get_joint(num_samples, keys[1])
     eval_data = jnp.concatenate([A, B], axis=1)
-    eval_data, _, _ = normalize(eval_data, train_mean, train_std)
+    eval_data, _, _ = normalize(
+        eval_data, train_mean, train_std, imposed_std=sigma_data
+    )
 
     # get checkpointer for new checkpoints
     ckpter = Checkpointer(
@@ -54,7 +56,6 @@ def main(args):
     train(
         model,
         opt,
-        loss,
         train_data,
         eval_data,
         num_train_steps,

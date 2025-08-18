@@ -1,9 +1,12 @@
 import os
 from typing import Iterator, Optional, Sequence, Tuple, Union
 
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
+
+from .diffusion import AbstractDiffusionModel
 
 
 def dataloader(
@@ -70,7 +73,22 @@ def normalize(
     if original_std is None:
         original_std = jnp.std(data, axis=axis)
 
+    # prevent division by zero
+    if jnp.any(original_std == 0):
+        print("from normalization: 0 values in standard deviation - replacing with 1s.")
+        original_std = jnp.where(original_std == 0, 1, original_std)
+
     data = (data - original_mean) / original_std
     data = data * imposed_std + imposed_mean
 
     return data, original_mean, original_std
+
+
+def batch_avg_loss(
+    model: AbstractDiffusionModel,
+    data: Array,
+    times: Array,
+    conds: Optional[Array],
+    key: Key,
+) -> Array:
+    return jnp.mean(jax.vmap(model.loss)(data, times, conds, key))
