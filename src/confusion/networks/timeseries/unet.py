@@ -259,7 +259,8 @@ class UNet1D(AbstractNetwork):
         attn_resolutions: List[int],
         *,
         key: Key,
-        is_conditional: bool = True,
+        is_conditional: bool = False,
+        num_conds: int | None = None,
     ):
         keys = jax.random.split(key, 9)
         del key
@@ -282,8 +283,9 @@ class UNet1D(AbstractNetwork):
 
         # setup conditional handling
         if is_conditional:
+            assert num_conds is not None
             self.c_mlp = eqx.nn.MLP(
-                proj_size,
+                proj_size * num_conds,
                 hidden_size,
                 4 * hidden_size,
                 1,
@@ -495,8 +497,8 @@ class UNet1D(AbstractNetwork):
         t = self.t_mlp(t)
         if c is not None:
             assert self.c_mlp is not None
-            c = self.temb(c)
-            c = self.c_mlp(c)
+            c = jax.vmap(self.temb)(jnp.ravel(c))
+            c = self.c_mlp(jnp.ravel(c))
         h = self.first_conv(x)
         hs = [h]
         for res_blocks in self.down_res_blocks:
