@@ -1,7 +1,16 @@
+# python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# virtual environments
+.venv
+
+# others
 checkpoints/
 examples/mnist/data/
 figs/
-src/confusion.egg-info/
-__pycache__/
-.venv/
 .zed
