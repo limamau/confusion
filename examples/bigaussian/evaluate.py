@@ -8,7 +8,6 @@ from configs import get_config
 from reference import get_joint
 
 from confusion.checkpointing import Checkpointer
-from confusion.guidance import SecondOrderConstantMomentMatchingGuidance
 from confusion.utils import denormalize, normalize
 
 FIGSIZE = (7, 3)
@@ -42,7 +41,7 @@ def main(args):
     evaluate_key = config.evaluate_key
     pre_conds = config.conds
     num_variables = config.num_variables
-    const_matrix = config.const_matrix
+    guidance = config.guidance
     y = config.y
 
     a = config.a
@@ -65,8 +64,6 @@ def main(args):
         ref_samples_std,
         imposed_std=sigma_data,
     )
-    print("y:", y)
-    guidance = SecondOrderConstantMomentMatchingGuidance(const_matrix)
     post_conds = jnp.repeat(y[:, None], sample_size, axis=0)
 
     # get checkpointer to restore
@@ -110,7 +107,7 @@ def main(args):
     )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
-    title = "No intervention - diffusion model"
+    title = "No intervention - generative model"
     print(title)
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B)
@@ -137,7 +134,7 @@ def main(args):
     plt.ylim(*YLIM)
     plt.legend()
 
-    # do(B) intervention - diffusion model
+    # do(B) intervention - generative model
     plt.subplot(1, 2, 2)
     start_time = time.time()
     gen_samples = sampler.sample(
@@ -154,12 +151,12 @@ def main(args):
     )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
-    print("A={} - diffusion model".format(a))
+    print("A={} - generative model".format(a))
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B)
     plt.hist(gen_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
     plt.hist(gen_B.flatten(), bins=BINS, alpha=ALPHA, label="B")
-    plt.title("A={} - diffusion model".format(a))
+    plt.title("A={} - generative model".format(a))
     plt.xlim(*XLIM)
     plt.ylim(*YLIM)
     plt.legend()

@@ -5,6 +5,7 @@ import jax.random as jr
 import optax
 
 from confusion.diffeqs.sdes import VariancePreserving
+from confusion.guidance import SecondOrderConstantMomentMatchingGuidance
 from confusion.models.diffusion import StandardDiffusionModel
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ConstantStepEulerMaruyamaSampler
@@ -87,3 +88,4 @@ class Config:
     a = 1.0
     const_matrix = jnp.array([[1.0, 0.0]])
     y = jnp.array([a])
+    guidance = SecondOrderConstantMomentMatchingGuidance(const_matrix)

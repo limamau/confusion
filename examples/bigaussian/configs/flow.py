@@ -5,6 +5,7 @@ import jax.random as jr
 import optax
 
 from confusion.diffeqs.odes import OTFlowMatching
+from confusion.guidance import ManifoldGuidance
 from confusion.models.drift import StandardFlowMatching
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ScheduledEulerSampler
@@ -12,7 +13,7 @@ from confusion.schedules import LinearTimeSchedule
 
 
 class Config:
-    """Configuration for Flow Matching."""
+    """Configuration for Flow Matching with Optimal Transport ODE."""
 
     name = "flow"
 
@@ -69,7 +70,7 @@ class Config:
     # 8. sampling
     t0_sampling = 1e-2
     time_schedule = LinearTimeSchedule()
-    num_sampling_steps = 100
+    num_sampling_steps = 10
     times = time_schedule(t0_sampling, t1, num_sampling_steps)
     sample_size = 1000
     conds = None
@@ -77,5 +78,6 @@ class Config:
 
     # 9. guidance
     a = 1.0
-    const_matrix = jnp.array([[1.0, 0.0]])
+    mask = jnp.array([True, False])
     y = jnp.array([a])
+    guidance = ManifoldGuidance(mask)
