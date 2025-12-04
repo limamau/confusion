@@ -8,8 +8,9 @@ import jax.random as jr
 from einops import rearrange
 from jaxtyping import Array, Key
 
+from confusion.networks import AbstractNetwork
+
 from ..layers import GaussianFourierProjection
-from ..networks import AbstractNetwork
 
 
 class LinearTimeSelfAttention1D(eqx.Module):

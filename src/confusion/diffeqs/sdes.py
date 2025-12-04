@@ -4,10 +4,12 @@ from typing import Callable, Tuple
 import jax.numpy as jnp
 from jaxtyping import Array
 
+from confusion.diffeqs.abstract import AbstractDiffEq
 
-class AbstractSDE:
+
+class AbstractSDE(AbstractDiffEq):
     @abstractmethod
-    def s(self, t: Array) -> Array:
+    def mu(self, t: Array) -> Array:
         raise NotImplementedError
 
     @abstractmethod
@@ -17,22 +19,22 @@ class AbstractSDE:
     # in practice, it's probably better to override this method
     # in order to provide a more efficient implementation
     def diffusion(self, t: Array) -> Array:
-        s_t = self.s(t)
+        mu_t = self.mu(t)
         sigma_t = self.sigma(t)
         sigma_t2 = jnp.square(sigma_t)
         sigma_t_dot = jnp.gradient(sigma_t2, t)
-        s_t_dot = jnp.gradient(s_t, t)
-        return jnp.sqrt(sigma_t_dot * sigma_t - sigma_t2 * s_t_dot / s_t)
+        mu_t_dot = jnp.gradient(mu_t, t)
+        return jnp.sqrt(sigma_t_dot * sigma_t - sigma_t2 * mu_t_dot / mu_t)
 
     # again, it's probably better to override this method
     # in order to provide a more efficient implementation
     def drift(self, x: Array, t: Array) -> Array:
-        s_t = self.s(t)
-        s_t_dot = jnp.gradient(s_t, t)
-        return s_t_dot / s_t * x
+        mu_t = self.mu(t)
+        mu_t_dot = jnp.gradient(mu_t, t)
+        return mu_t_dot / mu_t * x
 
     def perturbation(self, x0: Array, t: Array) -> Tuple[Array, Array]:
-        return self.s(t) * x0, self.sigma(t)
+        return self.mu(t) * x0, self.sigma(t)
 
 
 class SubVariancePreserving(AbstractSDE):
@@ -53,7 +55,7 @@ class SubVariancePreserving(AbstractSDE):
     def _beta(self, t: Array) -> Array:
         return self.beta_min + t * (self.beta_max - self.beta_min)
 
-    def s(self, t: Array) -> Array:
+    def mu(self, t: Array) -> Array:
         return jnp.exp(-0.5 * self._alpha(t))
 
     def sigma(self, t: Array) -> Array:
@@ -84,7 +86,7 @@ class VariancePreserving(AbstractSDE):
     def _beta(self, t: Array) -> Array:
         return self.beta_min + t * (self.beta_max - self.beta_min)
 
-    def s(self, t: Array) -> Array:
+    def mu(self, t: Array) -> Array:
         return jnp.exp(-0.5 * self._alpha(t))
 
     def sigma(self, t: Array) -> Array:
@@ -126,7 +128,7 @@ class VarianceExploding(AbstractSDE):
                 2 * jnp.log(sigma_max / sigma_min)
             )
 
-    def s(self, t: Array) -> Array:
+    def mu(self, t: Array) -> Array:
         return jnp.ones_like(t)
 
     def sigma(self, t: Array) -> Array:

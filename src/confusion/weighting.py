@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 from jaxtyping import Array
 
-from .sdes import AbstractSDE
+from confusion.diffeqs.sdes import AbstractSDE
 
 
 class AbstractWeighting:

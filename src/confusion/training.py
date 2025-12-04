@@ -9,17 +9,17 @@ from equinox import filter_jit
 from jaxtyping import Array, Key
 from optax import GradientTransformation, OptState
 
-from .checkpointing import Checkpointer
-from .diffusion import AbstractDiffusionModel
-from .evaluation import AbstractEvaluator, BestEval, LossOnlyEvaluator
-from .logging import AbstractLogger, PrintOnlyLogger
-from .schedules import AbstractTimeSchedule, LinearTimeSchedule
-from .utils import batch_avg_loss, dataloader
+from confusion.checkpointing import Checkpointer
+from confusion.evaluation import AbstractEvaluator, BestEval, LossOnlyEvaluator
+from confusion.logging import AbstractLogger, PrintOnlyLogger
+from confusion.models import AbstractModel
+from confusion.schedules import AbstractTimeSchedule, LinearTimeSchedule
+from confusion.utils import batch_avg_loss, dataloader
 
 
 def update_ema(
-    ema_model: AbstractDiffusionModel, model: AbstractDiffusionModel, ema_rate: float
-) -> AbstractDiffusionModel:
+    ema_model: AbstractModel, model: AbstractModel, ema_rate: float
+) -> AbstractModel:
     # get model parameters
     ema_params = eqx.filter(ema_model, eqx.is_inexact_array)
     params = eqx.filter(model, eqx.is_inexact_array)
@@ -36,8 +36,8 @@ def update_ema(
 
 @filter_jit
 def make_step(
-    model: AbstractDiffusionModel,
-    ema_model: AbstractDiffusionModel,
+    model: AbstractModel,
+    ema_model: AbstractModel,
     data: Array,
     conds: Optional[Array],
     key: Key,
@@ -47,7 +47,7 @@ def make_step(
     t1: float,
     ema_rate: float,
     time_schedule: AbstractTimeSchedule,
-) -> Tuple[Array, AbstractDiffusionModel, AbstractDiffusionModel, Key, OptState]:
+) -> Tuple[Array, AbstractModel, AbstractModel, Key, OptState]:
     filtered_value_and_grad = eqx.filter_value_and_grad(batch_avg_loss)
     model_value_and_grad = ft.partial(filtered_value_and_grad, model)
     batch_size = data.shape[0]
@@ -62,7 +62,7 @@ def make_step(
 
 
 def train(
-    model: AbstractDiffusionModel,
+    model: AbstractModel,
     opt: GradientTransformation,
     train_data: Array,
     eval_data: Union[Array, Tuple[Array, ...]],

@@ -6,8 +6,9 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
+from confusion.networks import AbstractNetwork
+
 from ..layers import GaussianFourierProjection
-from ..networks import AbstractNetwork
 
 
 class ResBlock(eqx.Module):

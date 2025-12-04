@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
-from .diffusion import AbstractDiffusionModel
+from confusion.models import AbstractModel
 
 
 def dataloader(
@@ -85,7 +85,7 @@ def normalize(
 
 
 def batch_avg_loss(
-    model: AbstractDiffusionModel,
+    model: AbstractModel,
     data: Array,
     times: Array,
     conds: Optional[Array],

@@ -3,11 +3,11 @@ import os
 import jax.random as jr
 import optax
 
-from confusion.diffusion import StandardDiffusionModel
+from confusion.diffeqs.sdes import VarianceExploding
+from confusion.models.diffusion import StandardDiffusionModel
 from confusion.networks import UNet1D
 from confusion.sampling import ConstantStepEulerMaruyamaSampler
 from confusion.schedules import LinearTimeSchedule
-from confusion.sdes import VarianceExploding
 from confusion.weighting import SquaredWeighting
 
 

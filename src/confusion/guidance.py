@@ -1,20 +1,21 @@
 from abc import abstractmethod
-from typing import Optional, Callable, Union
+from typing import Callable, Optional, Union
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, Key
 from jax.flatten_util import ravel_pytree
+from jaxtyping import Array, ArrayLike, Key
 
-from .diffusion import AbstractDiffusionModel
+from confusion.diffeqs.abstract import AbstractDiffEq
 
 
 class AbstractGuidance:
     @abstractmethod
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -27,7 +28,7 @@ class AbstractGuidance:
     @abstractmethod
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -45,7 +46,8 @@ class GuidanceFree(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -53,11 +55,11 @@ class GuidanceFree(AbstractGuidance):
         *,
         key: Key,
     ) -> Array:
-        return model.score(x, t, pre_conds, key=key)
+        return score_fn(x, t)
 
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -79,7 +81,8 @@ class LinearFirstOrderMomentMatchingGuidance(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -92,15 +95,17 @@ class LinearFirstOrderMomentMatchingGuidance(AbstractGuidance):
         # assert self.const_matrix.shape == (*post_conds.shape, *x.shape)
 
         # pre-calculations
-        sigma_t2 = jnp.square(model.sde.sigma(t))
-        s_t = model.sde.s(t)
+        sigma_t2 = jnp.square(diffeq.sigma(t))
+        mu_t = diffeq.mu(t)
 
         def x0_hat(x: Array) -> Array:
-            return (x + sigma_t2 * model.score(x, t, pre_conds, key=key)) / s_t
+            return (x + sigma_t2 * score_fn(x, t)) / mu_t
 
         def log_pdf(x: Array) -> Array:
             loc = self.const_matrix @ x0_hat(x)
-            scale = sigma_t2 / jnp.square(s_t) * self.const_matrix @ self.const_matrix.T
+            scale = (
+                sigma_t2 / jnp.square(mu_t) * self.const_matrix @ self.const_matrix.T
+            )
             log_pdf = jax.scipy.stats.multivariate_normal.logpdf(
                 post_conds, mean=loc, cov=scale
             )
@@ -109,7 +114,7 @@ class LinearFirstOrderMomentMatchingGuidance(AbstractGuidance):
         grad_logpdf = eqx.filter_grad(log_pdf)(x)
 
         # clipping
-        score = model.score(x, t, pre_conds, key=key)
+        score = score_fn(x, t)
         grad_logpdf = jnp.nan_to_num(grad_logpdf)
 
         result = score + grad_logpdf
@@ -118,7 +123,7 @@ class LinearFirstOrderMomentMatchingGuidance(AbstractGuidance):
 
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -140,7 +145,8 @@ class FunctionFirstOrderMomentMatchingGuidance(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -150,12 +156,12 @@ class FunctionFirstOrderMomentMatchingGuidance(AbstractGuidance):
     ) -> Array:
         assert post_conds is not None
 
-        sigma_t2 = jnp.square(model.sde.sigma(t))
-        s_t = model.sde.s(t)
+        sigma_t2 = jnp.square(diffeq.sigma(t))
+        mu_t = diffeq.mu(t)
 
         # estimate x0
         def x0_hat_fn(x_: Array) -> Array:
-            return (x_ + sigma_t2 * model.score(x_, t, pre_conds, key=key)) / s_t
+            return (x_ + sigma_t2 * score_fn(x_, t)) / mu_t
 
         # flatten helper
         def flatten(z: Array):
@@ -177,25 +183,26 @@ class FunctionFirstOrderMomentMatchingGuidance(AbstractGuidance):
             # covariance
             gradC = jax.jacrev(const_fn_wrapped)(x0_hat)
             gradC_2d = gradC.reshape(gradC.shape[0], -1)
-            scale = (sigma_t2 / jnp.square(s_t)) * (gradC_2d @ gradC_2d.T)
+            scale = (sigma_t2 / jnp.square(mu_t)) * (gradC_2d @ gradC_2d.T)
 
             return jnp.squeeze(
                 jax.scipy.stats.multivariate_normal.logpdf(
-                flat_post_conds, mean=loc, cov=scale)
+                    flat_post_conds, mean=loc, cov=scale
+                )
             )
 
         # gradient wrt x
         grad_logpdf = eqx.filter_grad(log_pdf_fn)(x)
 
         # combine with model score
-        score = model.score(x, t, pre_conds, key=key)
+        score = score_fn(x, t)
         grad_logpdf = jnp.nan_to_num(grad_logpdf)
 
         return score + grad_logpdf
 
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -219,7 +226,8 @@ class SecondOrderConstantMomentMatchingGuidance(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -231,17 +239,17 @@ class SecondOrderConstantMomentMatchingGuidance(AbstractGuidance):
         # assert self.const_matrix.shape == (*post_conds.shape, *x.shape)
 
         # pre-calculations
-        sigma_t2 = jnp.square(model.sde.sigma(t))
-        s_t = model.sde.s(t)
+        sigma_t2 = jnp.square(diffeq.sigma(t))
+        mu_t = diffeq.mu(t)
 
         def x0_hat(x: Array) -> Array:
-            return (x + sigma_t2 * model.score(x, t, pre_conds, key=key)) / s_t
+            return (x + sigma_t2 * score_fn(x, t)) / mu_t
 
         # we follow the suggestions on the paper and compute this matrix
         # multiplication as the Jacobian of a function of x0_hat
         def mult_C_Sigma_hat(x: Array) -> Array:
             def fun(x: Array) -> Array:
-                return sigma_t2 / s_t * self.const_matrix @ x0_hat(x)
+                return sigma_t2 / mu_t * self.const_matrix @ x0_hat(x)
 
             # we use jacrev to compute the Jacobian because we can expect more inputs
             # (dimension of the signal) than outputs (dimension of the constraints) in
@@ -260,7 +268,7 @@ class SecondOrderConstantMomentMatchingGuidance(AbstractGuidance):
         grad_logpdf = eqx.filter_grad(log_pdf)(x)
 
         # clipping
-        score = model.score(x, t, pre_conds, key=key)
+        score = score_fn(x, t)
         norm_score = jnp.linalg.norm(score)
         grad_logpdf = jnp.nan_to_num(grad_logpdf)
         grad_logpdf = jnp.clip(
@@ -271,10 +279,9 @@ class SecondOrderConstantMomentMatchingGuidance(AbstractGuidance):
 
         return score + grad_logpdf
 
-
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -297,8 +304,12 @@ class FirstOrderMomentMatching(AbstractGuidance):
         condition: str = "equality",
         clipping_factor: Optional[float] = None,
     ):
-        assert cov_method in ["approx", "exact"], "Invalid covariance method: {}".format(cov_method)
-        assert condition in ["equality", "inequality"], "Invalid condition: {}".format(condition)
+        assert cov_method in ["approx", "exact"], (
+            "Invalid covariance method: {}".format(cov_method)
+        )
+        assert condition in ["equality", "inequality"], "Invalid condition: {}".format(
+            condition
+        )
         self.clipping_factor = clipping_factor
 
         # constraint
@@ -331,7 +342,8 @@ class FirstOrderMomentMatching(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -342,11 +354,11 @@ class FirstOrderMomentMatching(AbstractGuidance):
         assert post_conds is not None
 
         # pre-calculations
-        sigma_t2 = jnp.square(model.sde.sigma(t))
-        s_t = model.sde.s(t)
+        sigma_t2 = jnp.square(diffeq.sigma(t))
+        mu_t = diffeq.mu(t)
 
         def x0_hat_fn(x: Array) -> Array:
-            return (x + sigma_t2 * model.score(x, t, pre_conds, key=key)) / s_t
+            return (x + sigma_t2 * score_fn(x, t)) / mu_t
 
         def sigma_hat_fn(x0_hat: Array) -> Array:
             gradC = jax.jacrev(self._constraint_flat_wrap)(x0_hat)
@@ -363,7 +375,7 @@ class FirstOrderMomentMatching(AbstractGuidance):
 
             # covariance
             cov = sigma_hat_fn(x0_hat)
-            cov = (sigma_t2 / jnp.square(s_t)) * cov
+            cov = (sigma_t2 / jnp.square(mu_t)) * cov
 
             return jnp.squeeze(self.condition(flat_post_conds, loc, cov))
 
@@ -371,15 +383,14 @@ class FirstOrderMomentMatching(AbstractGuidance):
         grad_logpdf = eqx.filter_grad(log_pdf_fn)(x)
 
         # combine with model score
-        score = model.score(x, t, pre_conds, key=key)
+        score = score_fn(x, t)
         grad_logpdf = jnp.nan_to_num(grad_logpdf)
 
         return score + grad_logpdf
 
-
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -400,8 +411,12 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
         condition: str = "equality",
         clipping_factor: float = 10.0,
     ):
-        assert cov_method in ["approx", "exact"], "Invalid covariance method: {}".format(cov_method)
-        assert condition in ["equality", "inequality"], "Invalid condition: {}".format(condition)
+        assert cov_method in ["approx", "exact"], (
+            "Invalid covariance method: {}".format(cov_method)
+        )
+        assert condition in ["equality", "inequality"], "Invalid condition: {}".format(
+            condition
+        )
         self.clipping_factor = clipping_factor
 
         # constraint
@@ -434,7 +449,8 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -445,17 +461,16 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
         assert post_conds is not None
 
         # pre-calculations
-        sigma_t2 = jnp.square(model.sde.sigma(t))
-        s_t = model.sde.s(t)
+        sigma_t2 = jnp.square(diffeq.sigma(t))
+        mu_t = diffeq.mu(t)
 
         def x0_hat_fn(x: Array) -> Array:
-            return (x + sigma_t2 * model.score(x, t, pre_conds, key=key)) / s_t
+            return (x + sigma_t2 * score_fn(x, t)) / mu_t
 
         # we follow the suggestions on the paper and compute this matrix
         # multiplication as the Jacobian of a function of x0_hat
         def mult_C_Sigma_hat_fn(x: Array) -> Array:
-            return sigma_t2 / s_t * self._constraint_flat_wrap(x0_hat_fn(x))
-
+            return sigma_t2 / mu_t * self._constraint_flat_wrap(x0_hat_fn(x))
 
         def log_pdf_fn(x_: Array) -> Array:
             # variable
@@ -469,11 +484,11 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
             # expect more inputs (dimension of the signal) than outputs (dimension
             # of the constraints) in the map to be differentiated
             mult_C_Sigma_hat = eqx.filter_jacrev(mult_C_Sigma_hat_fn)(x)
-            mult_C_Sigma_hat = mult_C_Sigma_hat.reshape(mult_C_Sigma_hat.shape[0], -1) # pyright: ignore
+            mult_C_Sigma_hat = mult_C_Sigma_hat.reshape(mult_C_Sigma_hat.shape[0], -1)  # pyright: ignore
             gradC = jax.jacrev(self._constraint_flat_wrap)(x0_hat)
             gradC_2d = gradC.reshape(gradC.shape[0], -1)
             cov = mult_C_Sigma_hat @ gradC_2d.T
-            cov = (sigma_t2 / s_t) * cov
+            cov = (sigma_t2 / mu_t) * cov
 
             return jnp.squeeze(self.condition(flat_post_conds, loc, cov))
 
@@ -481,7 +496,7 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
         grad_logpdf = eqx.filter_grad(log_pdf_fn)(x)
 
         # clipping
-        score = model.score(x, t, pre_conds, key=key)
+        score = score_fn(x, t)
         norm_score = jnp.linalg.norm(score)
         grad_logpdf = jnp.nan_to_num(grad_logpdf)
         grad_logpdf = jnp.clip(
@@ -494,7 +509,7 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
 
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -516,7 +531,8 @@ class ManifoldGuidance(AbstractGuidance):
 
     def apply_on_score(
         self,
-        model: AbstractDiffusionModel,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -524,11 +540,11 @@ class ManifoldGuidance(AbstractGuidance):
         *,
         key: Optional[Key] = None,
     ) -> Array:
-        return model.score(x, t, pre_conds, key=key)
+        return score_fn(x, t)
 
     def apply_on_x_next(
         self,
-        model: AbstractDiffusionModel,
+        diffeq: AbstractDiffEq,
         x: Array,
         t: Array,
         pre_conds: Optional[Array],
@@ -537,7 +553,7 @@ class ManifoldGuidance(AbstractGuidance):
         key: Optional[Key] = None,
     ) -> Array:
         # move y to the mean trajectory
-        y = post_conds * model.sde.s(t)
+        y = post_conds * diffeq.mu(t)
 
         # change values on x according to mask
         x = jnp.where(self.mask, y, x)

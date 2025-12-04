@@ -4,11 +4,11 @@ import jax.numpy as jnp
 import jax.random as jr
 import optax
 
-from confusion.diffusion import StandardDiffusionModel
+from confusion.diffeqs.sdes import VariancePreserving
+from confusion.models.diffusion import StandardDiffusionModel
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ConstantStepEulerMaruyamaSampler
 from confusion.schedules import LinearTimeSchedule
-from confusion.sdes import VariancePreserving
 from confusion.weighting import SquaredWeighting
 
 

@@ -5,14 +5,14 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
-from .diffusion import AbstractDiffusionModel
-from .guidance import AbstractGuidance, GuidanceFree
-from .logging import AbstractLogger
-from .metrics import AbstractMetric
-from .sampling import AbstractSampler
-from .schedules import AbstractTimeSchedule
-from .utils import batch_avg_loss
-from .utils import dataloader as utilsdataloader
+from confusion.guidance import AbstractGuidance, GuidanceFree
+from confusion.logging import AbstractLogger
+from confusion.metrics import AbstractMetric
+from confusion.models import AbstractModel
+from confusion.sampling import AbstractSampler
+from confusion.schedules import AbstractTimeSchedule
+from confusion.utils import batch_avg_loss
+from confusion.utils import dataloader as utilsdataloader
 
 
 # helper eval classes #
@@ -83,7 +83,7 @@ class AbstractEvaluator:
     def loss_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         t0: float,
@@ -99,7 +99,7 @@ class AbstractEvaluator:
     def sampling_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         logger: AbstractLogger,
@@ -131,7 +131,7 @@ class LossOnlyEvaluator(AbstractEvaluator):
     def loss_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         t0: float,
@@ -157,7 +157,7 @@ class LossOnlyEvaluator(AbstractEvaluator):
     def sampling_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         logger: AbstractLogger,
@@ -199,7 +199,7 @@ class GuidanceFreeEvaluator(AbstractEvaluator):
     def loss_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         t0: float,
@@ -220,7 +220,7 @@ class GuidanceFreeEvaluator(AbstractEvaluator):
     def sampling_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         logger: AbstractLogger,
@@ -304,7 +304,7 @@ class MeanGuidancesAndMetricsEvaluator(AbstractEvaluator):
     def loss_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         t0: float,
@@ -326,7 +326,7 @@ class MeanGuidancesAndMetricsEvaluator(AbstractEvaluator):
     def sampling_eval(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         data: Union[Array, Tuple[Array, ...]],
         conds: Optional[Array],
         logger: AbstractLogger,

@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import orbax.checkpoint as ocp
 from optax import GradientTransformation, OptState
 
-from .diffusion import AbstractDiffusionModel
+from confusion.models import AbstractModel
 
 
 class Checkpointer:
@@ -52,10 +52,10 @@ class Checkpointer:
 
     def restore(
         self,
-        abstract_model: AbstractDiffusionModel,
+        abstract_model: AbstractModel,
         opt: GradientTransformation,
         step: int | None = None,
-    ) -> Tuple[AbstractDiffusionModel, OptState]:
+    ) -> Tuple[AbstractModel, OptState]:
         # restore latest/best if step is not given
         if step is None:
             if self.saving_criteria == "best":
@@ -91,7 +91,7 @@ class Checkpointer:
     def save(
         self,
         step: int,
-        model: AbstractDiffusionModel,
+        model: AbstractModel,
         opt_state: OptState,
         value: float,
     ) -> None:

@@ -86,8 +86,8 @@ class PowerTimeSchedule(AbstractTimeSchedule):
 #         size: int,
 #         key: Optional[Key] = None,
 #     ):
-#         sigma_max = self.sde.sigma(jnp.array([t1]))
-#         sigma_min = self.sde.sigma(jnp.array([t0]))
+#         sigma_max = self.diffeq.sigma(jnp.array([t1]))
+#         sigma_min = self.diffeq.sigma(jnp.array([t0]))
 
 #         sigmas = jnp.power(
 #             jnp.power(sigma_max, (1 / self.rho))
@@ -100,7 +100,7 @@ class PowerTimeSchedule(AbstractTimeSchedule):
 #             self.rho,
 #         )
 
-#         t_array = jnp.array([self.sde.t(sigma_i) for sigma_i in sigmas])[::-1]
+#         t_array = jnp.array([self.diffeq.t(sigma_i) for sigma_i in sigmas])[::-1]
 
 #         # bypass approximations on tails
 #         assert jnp.abs(t_array[0] - t1) < self.tol, (

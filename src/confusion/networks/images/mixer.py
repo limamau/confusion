@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from jaxtyping import Array, Key
 
-from ..networks import AbstractNetwork
+from confusion.networks import AbstractNetwork
 
 
 class MixerBlock(eqx.Module):
