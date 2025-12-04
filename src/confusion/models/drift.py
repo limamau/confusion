@@ -78,8 +78,8 @@ class StandardFlowMatching(AbstractDriftModel):
         x0 = x
         dropout_key, sample_key = jr.split(key)
         x1 = jr.normal(sample_key, x0.shape)
-        x_t = self.ode.perturbation(x0, t, x1)
-        u_t = self.ode.vector_field(x_t, t, x0)
+        x_t = self.diffeq.perturbation(x0, t, x1)
+        u_t = self.diffeq.vector_field(x_t, t, x0)
         v_t = self.network(x_t, t, c, key=dropout_key)
         return jnp.mean(jnp.square(v_t - u_t))
 

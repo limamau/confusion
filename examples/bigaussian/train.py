@@ -77,11 +77,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--config",
-        choices=[
-            "edm",
-            "ve",
-            "vp",
-        ],
+        choices=["edm", "ve", "vp", "flow"],
         required=True,
     )
     args = parser.parse_args()
