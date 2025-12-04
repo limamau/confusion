@@ -11,7 +11,7 @@ from confusion.models import AbstractModel
 from confusion.networks import AbstractNetwork
 
 
-class AbstractDriftModel(AbstractModel[AbstractODE]):
+class AbstractFlowModel(AbstractModel[AbstractODE]):
     network: AbstractNetwork
 
     def __init__(self, network: AbstractNetwork, ode: AbstractODE):
@@ -60,7 +60,7 @@ class AbstractDriftModel(AbstractModel[AbstractODE]):
         raise NotImplementedError
 
 
-class StandardFlowMatching(AbstractDriftModel):
+class StandardFlowMatching(AbstractFlowModel):
     def __init__(
         self,
         network: AbstractNetwork,

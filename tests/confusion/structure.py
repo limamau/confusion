@@ -8,7 +8,7 @@ from confusion.diffeqs.odes import OTFlowMatching
 from confusion.diffeqs.sdes import VariancePreserving
 from confusion.guidance import GuidanceFree
 from confusion.models.diffusion import StandardDiffusionModel
-from confusion.models.drift import StandardFlowMatching
+from confusion.models.flow import StandardFlowMatching
 from confusion.networks import AbstractNetwork
 from confusion.sampling import (
     ConstantStepEulerMaruyamaSampler,

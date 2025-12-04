@@ -6,7 +6,7 @@ import optax
 
 from confusion.diffeqs.odes import OTFlowMatching
 from confusion.guidance import ManifoldGuidance
-from confusion.models.drift import StandardFlowMatching
+from confusion.models.flow import StandardFlowMatching
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ScheduledEulerSampler
 from confusion.schedules import LinearTimeSchedule
