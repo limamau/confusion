@@ -26,6 +26,20 @@ class AbstractGuidance:
         raise NotImplementedError
 
     @abstractmethod
+    def apply_on_diffusion(
+        self,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
+        x: Array,
+        t: Array,
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
+        *,
+        key: Key,
+    ) -> Array:
+        raise NotImplementedError
+
+    @abstractmethod
     def apply_on_x_next(
         self,
         diffeq: AbstractDiffEq,
@@ -57,6 +71,22 @@ class GuidanceFree(AbstractGuidance):
     ) -> Array:
         return score_fn(x, t)
 
+    def apply_on_diffusion(
+        self,
+        score_fn: Callable[[Array, Array], Array],
+        diffeq: AbstractDiffEq,
+        x: Array,
+        t: Array,
+        pre_conds: Optional[Array],
+        post_conds: Optional[Array],
+        *,
+        key: Key,
+    ) -> Array:
+        # limamau: it has to be a diffusion model here,
+        # because a flowmtahcing model does not have a diffusion term
+        # maybe we can raise something in the future to better describe the error?
+        return diffeq.diffusion(t)
+
     def apply_on_x_next(
         self,
         diffeq: AbstractDiffEq,
@@ -70,7 +100,7 @@ class GuidanceFree(AbstractGuidance):
         return x
 
 
-class LinearFirstOrderMomentMatchingGuidance(AbstractGuidance):
+class LinearFirstOrderMomentMatchingGuidance(GuidanceFree):
     const_matrix: Array
 
     def __init__(
@@ -121,20 +151,8 @@ class LinearFirstOrderMomentMatchingGuidance(AbstractGuidance):
 
         return result
 
-    def apply_on_x_next(
-        self,
-        diffeq: AbstractDiffEq,
-        x: Array,
-        t: Array,
-        pre_conds: Optional[Array],
-        post_conds: Optional[Array],
-        *,
-        key: Key,
-    ) -> Array:
-        return x
 
-
-class FunctionFirstOrderMomentMatchingGuidance(AbstractGuidance):
+class FunctionFirstOrderMomentMatchingGuidance(GuidanceFree):
     const_fn: Callable[[Array], Array]
 
     def __init__(
@@ -200,20 +218,8 @@ class FunctionFirstOrderMomentMatchingGuidance(AbstractGuidance):
 
         return score + grad_logpdf
 
-    def apply_on_x_next(
-        self,
-        diffeq: AbstractDiffEq,
-        x: Array,
-        t: Array,
-        pre_conds: Optional[Array],
-        post_conds: Optional[Array],
-        *,
-        key: Key,
-    ) -> Array:
-        return x
 
-
-class SecondOrderConstantMomentMatchingGuidance(AbstractGuidance):
+class SecondOrderConstantMomentMatchingGuidance(GuidanceFree):
     const_matrix: Array
 
     def __init__(
@@ -279,22 +285,10 @@ class SecondOrderConstantMomentMatchingGuidance(AbstractGuidance):
 
         return score + grad_logpdf
 
-    def apply_on_x_next(
-        self,
-        diffeq: AbstractDiffEq,
-        x: Array,
-        t: Array,
-        pre_conds: Optional[Array],
-        post_conds: Optional[Array],
-        *,
-        key: Key,
-    ) -> Array:
-        return x
 
-
-# limamau: the idea is to use that as the a unified version of all the current
+# limamau: the idea is to use that as the unified version of all the current
 # sub-versions of the first order moment matching-based guidance
-class FirstOrderMomentMatching(AbstractGuidance):
+class FirstOrderMomentMatching(GuidanceFree):
     constraint: Callable[[Array], Array]
 
     def __init__(
@@ -388,20 +382,10 @@ class FirstOrderMomentMatching(AbstractGuidance):
 
         return score + grad_logpdf
 
-    def apply_on_x_next(
-        self,
-        diffeq: AbstractDiffEq,
-        x: Array,
-        t: Array,
-        pre_conds: Optional[Array],
-        post_conds: Optional[Array],
-        *,
-        key: Key,
-    ) -> Array:
-        return x
 
-
-class SecondOrderMomentMatchingGuidance(AbstractGuidance):
+# limamau: the idea is to use that as the unified version of all the current
+# sub-versions of the second order moment matching-based guidance
+class SecondOrderMomentMatchingGuidance(GuidanceFree):
     constraint: Callable[[Array], Array]
 
     def __init__(
@@ -507,20 +491,8 @@ class SecondOrderMomentMatchingGuidance(AbstractGuidance):
 
         return score + grad_logpdf
 
-    def apply_on_x_next(
-        self,
-        diffeq: AbstractDiffEq,
-        x: Array,
-        t: Array,
-        pre_conds: Optional[Array],
-        post_conds: Optional[Array],
-        *,
-        key: Key,
-    ) -> Array:
-        return x
 
-
-class ManifoldGuidance(AbstractGuidance):
+class ManifoldGuidance(GuidanceFree):
     mask: Array
 
     def __init__(
@@ -528,19 +500,6 @@ class ManifoldGuidance(AbstractGuidance):
         mask: ArrayLike,
     ):
         self.mask = jnp.asarray(mask)
-
-    def apply_on_score(
-        self,
-        score_fn: Callable[[Array, Array], Array],
-        diffeq: AbstractDiffEq,
-        x: Array,
-        t: Array,
-        pre_conds: Optional[Array],
-        post_conds: Optional[Array],
-        *,
-        key: Optional[Key] = None,
-    ) -> Array:
-        return score_fn(x, t)
 
     def apply_on_x_next(
         self,

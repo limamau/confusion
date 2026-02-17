@@ -54,16 +54,20 @@ class AbstractDiffusionModel(AbstractModel[AbstractSDE]):
         post_conds: Optional[Array] = None,
     ) -> Tuple[Array, Array]:
         f = self.diffeq.drift(x, t)
-        g = self.diffeq.diffusion(t)
-        g2 = jnp.square(g)
+        # g = self.diffeq.diffusion(t)
+        # g2 = jnp.square(g)
 
         def score_fn(x, t):
             return self.score(x, t, pre_conds, key=None)
 
-        score = guidance.apply_on_score(
+        guided_score = guidance.apply_on_score(
             score_fn, self.diffeq, x, t, pre_conds, post_conds, key=None
         )
-        return f - g2 * score, g
+        guided_diff = guidance.apply_on_diffusion(
+            score_fn, self.diffeq, x, t, pre_conds, post_conds, key=None
+        )
+
+        return f - jnp.square(guided_diff) * guided_score, guided_diff
 
     @abstractmethod
     def loss(
