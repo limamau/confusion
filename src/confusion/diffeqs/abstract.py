@@ -11,7 +11,3 @@ class AbstractDiffEq:
     @abstractmethod
     def sigma(self, t: Array) -> Array:
         raise NotImplementedError
-
-    @abstractmethod
-    def perturbation(self, x0: Array, t: Array, x1: Array) -> Array:
-        raise NotImplementedError

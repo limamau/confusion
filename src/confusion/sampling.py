@@ -97,7 +97,7 @@ class ConstantStepEulerMaruyamaSampler(AbstractSDESampler):
 
             diffeq = model.diffeq
 
-            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
+            x_next = x + drift_val * (-dt) + diff_val * eta * jnp.sqrt(dt)
             x_next = guidance.apply_on_x_next(
                 diffeq, x_next, t_i, pre_conds, post_conds, key=None
             )
@@ -141,7 +141,7 @@ class ScheduledEulerMaruyamaSampler(AbstractSDESampler):
             diffeq = model.diffeq
 
             dt = t_array[i - 1] - t_i
-            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
+            x_next = x + drift_val * (-dt) + diff_val * eta * jnp.sqrt(dt)
             x_next = guidance.apply_on_x_next(
                 diffeq, x_next, t_i, pre_conds, post_conds, key=None
             )
@@ -229,7 +229,7 @@ class DebuggingEulerMaruyamaSampler(AbstractSDESampler):
             diffeq = model.diffeq
 
             dt = t_array[i - 1] - t_i
-            x_next = x + drift_val * (-dt) + diff_val * jnp.sqrt(dt) * eta
+            x_next = x + drift_val * (-dt) + diff_val * eta * jnp.sqrt(dt)
             x_next = guidance.apply_on_x_next(
                 diffeq, x_next, t_i, pre_conds, post_conds, key=None
             )
@@ -290,86 +290,6 @@ class DebuggingEulerSampler(AbstractODESampler):
         )
 
         return all_steps
-
-
-# # limamau: what is wrong here?
-# class PredictorCorrectorSampler(AbstractSampler):
-#     def __init__(
-#         self,
-#         t0: float = 1e-3,
-#         t1: float = 1.0,
-#         num_pred_steps: int = 4096,
-#         num_correct_steps: int = 5,
-#         tau: float = 0.25,
-#     ):
-#         self.t0 = jnp.array([t0])
-#         self.t1 = jnp.array([t1])
-#         self.num_pred_steps = num_pred_steps
-#         self.num_correct_steps = num_correct_steps
-#         self.tau = tau
-
-#     @filter_jit
-#     def single_sample(
-#         self,
-#         model: AbstractDiffusionModel,
-#         data_shape: Tuple[int, ...],
-#         guidance: AbstractGuidance,
-#         pre_conds: Optional[Array],
-#         post_conds: Optional[Array],
-#         key: Key,
-#     ) -> Array:
-#         # prep
-#         key, subkey = jr.split(key)
-#         sigma_max = model.diffeq.sigma(self.t1)
-#         x1 = jr.normal(subkey, data_shape) * sigma_max
-#         dim_score = len(x1)
-#         dt = (self.t1 - self.t0) / self.num_pred_steps
-
-#         def score_fn(x, t):
-#             return model.score(x, t, pre_conds, key=None)
-
-#         def correct_step(carry, _):
-#             x, t, key = carry
-#             key, subkey = jr.split(key)
-#             score = guidance.apply_on_score(
-#                 score_fn, model.sde, x, t, pre_conds, post_conds, key=None
-#             )
-#             norm2 = jnp.mean(jnp.square(score))
-#             delta = self.tau * dim_score / norm2
-#             noise = jr.normal(subkey, data_shape)
-#             x = x + delta * score + jnp.sqrt(2 * delta) * noise
-#             return (x, t, key), None
-
-#         def correct_scan(x, t, key):
-#             (x_final, _, key_final), _ = jax.lax.scan(
-#                 correct_step, (x, t, key), None, length=self.num_correct_steps
-#             )
-#             return x_final, key_final
-
-#         def pred_step(carry, _):
-#             x_curr, t_curr, key = carry
-#             key, sub = jr.split(key)
-#             t_next = t_curr - dt
-#             mu_ratio = model.diffeq.mu(t_next) / model.diffeq.mu(t_curr)
-#             sigma_ratio = model.diffeq.sigma(t_next) / model.diffeq.sigma(t_curr)
-#             sigma2 = jnp.square(model.diffeq.sigma(t_curr))
-#             score_curr = guidance.apply_on_score(
-#                 score_fn, model.sde, x_curr, t_curr, pre_conds, post_conds, key=None
-#             )
-#             x_pred = mu_ratio * x_curr + (mu_ratio - sigma_ratio) * score_curr * sigma2
-
-#             # corrector step
-#             x_corr, key = correct_scan(x_pred, t_next, key)
-#             x_corr = guidance.apply_on_x_next(
-#                 model.sde, x_corr, t_next, pre_conds, post_conds, key=key
-#             )
-#             return (x_corr, t_next, key), None
-
-#         # full scan
-#         (x_final, t_next, _), _ = jax.lax.scan(
-#             pred_step, (x1, self.t1, key), None, length=self.num_pred_steps
-#         )
-#         return x_final
 
 
 class ODEDiffraxSampler(AbstractODESampler):

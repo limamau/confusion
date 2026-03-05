@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Callable, Tuple
+from typing import Callable
 
 import jax.numpy as jnp
 from jaxtyping import Array
@@ -16,25 +16,13 @@ class AbstractSDE(AbstractDiffEq):
     def sigma(self, t: Array) -> Array:
         raise NotImplementedError
 
-    # in practice, it's probably better to override this method
-    # in order to provide a more efficient implementation
+    @abstractmethod
     def diffusion(self, t: Array) -> Array:
-        mu_t = self.mu(t)
-        sigma_t = self.sigma(t)
-        sigma_t2 = jnp.square(sigma_t)
-        sigma_t_dot = jnp.gradient(sigma_t2, t)
-        mu_t_dot = jnp.gradient(mu_t, t)
-        return jnp.sqrt(sigma_t_dot * sigma_t - sigma_t2 * mu_t_dot / mu_t)
+        raise NotImplementedError
 
-    # again, it's probably better to override this method
-    # in order to provide a more efficient implementation
+    @abstractmethod
     def drift(self, x: Array, t: Array) -> Array:
-        mu_t = self.mu(t)
-        mu_t_dot = jnp.gradient(mu_t, t)
-        return mu_t_dot / mu_t * x
-
-    def perturbation(self, x0: Array, t: Array) -> Tuple[Array, Array]:
-        return self.mu(t) * x0, self.sigma(t)
+        raise NotImplementedError
 
 
 class SubVariancePreserving(AbstractSDE):

@@ -104,8 +104,9 @@ class StandardDiffusionModel(AbstractDiffusionModel):
         x0 = x
 
         noise_key, dropout_key = jr.split(key)
-        mean, std = self.diffeq.perturbation(x0, t)
-        standard_noise = jr.normal(key, x0.shape)
+        mean = self.diffeq.mu(t) * x0
+        std = self.diffeq.sigma(t)
+        standard_noise = jr.normal(noise_key, x0.shape)
         x = mean + std * standard_noise
         net = self.network(x, t, c, key=dropout_key)
         weight_noise_ratio = self.weighting(t) / jnp.square(std)
@@ -170,8 +171,6 @@ class DenoiserDiffusionModel(AbstractDiffusionModel):
         x0 = x
 
         noise_key, dropout_key = jr.split(key)
-        # limamau: take out the perturbation method as this is only used in the standard diffusion model
-        # limamau: also go from s to mu in notation/method
         std = self.diffeq.sigma(t)
         standard_noise = jr.normal(key, x0.shape)
         x = x0 + std * standard_noise

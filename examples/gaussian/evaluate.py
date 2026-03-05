@@ -77,7 +77,7 @@ def main(args):
     # restore
     model, _ = ckpter.restore(model, opt)
 
-    # no intervention - reference
+    # unconditional - reference
     ref_A, ref_B = get_joint(sample_size, key)
     plt.figure(figsize=FIGSIZE)
     plt.subplot(1, 2, 1)
@@ -91,7 +91,7 @@ def main(args):
     plt.ylim(*YLIM)
     plt.legend()
 
-    # no intervention - diffusion model
+    # unconditional - diffusion model
     plt.subplot(1, 2, 2)
     start_time = time.time()
     gen_samples = sampler.sample(
@@ -134,7 +134,7 @@ def main(args):
     plt.ylim(*YLIM)
     plt.legend()
 
-    # do(B) intervention - generative model
+    # condition on B - generative model
     plt.subplot(1, 2, 2)
     start_time = time.time()
     gen_samples = sampler.sample(

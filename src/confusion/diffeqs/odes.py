@@ -18,9 +18,6 @@ class AbstractODE(AbstractDiffEq):
     def vector_field(self, x: Array, t: Array, x0: Array) -> Array:
         raise NotImplementedError
 
-    def perturbation(self, x0: Array, t: Array, x1: Array) -> Array:
-        return self.mu(t) * x0 + self.sigma(t) * x1
-
 
 class OTFlowMatching(AbstractODE):
     sigma_min: float

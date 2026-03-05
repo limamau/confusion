@@ -8,6 +8,7 @@ from jax.flatten_util import ravel_pytree
 from jaxtyping import Array, ArrayLike, Key
 
 from confusion.diffeqs.abstract import AbstractDiffEq
+from confusion.diffeqs.sdes import AbstractSDE
 
 
 class AbstractGuidance:
@@ -82,9 +83,7 @@ class GuidanceFree(AbstractGuidance):
         *,
         key: Key,
     ) -> Array:
-        # limamau: it has to be a diffusion model here,
-        # because a flowmtahcing model does not have a diffusion term
-        # maybe we can raise something in the future to better describe the error?
+        assert isinstance(diffeq, AbstractSDE)
         return diffeq.diffusion(t)
 
     def apply_on_x_next(
@@ -511,6 +510,8 @@ class ManifoldGuidance(GuidanceFree):
         *,
         key: Optional[Key] = None,
     ) -> Array:
+        assert post_conds is not None
+
         # move y to the mean trajectory
         y = post_conds * diffeq.mu(t)
 
