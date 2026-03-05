@@ -193,7 +193,7 @@ class FirstOrderMomentMatching(GuidanceFree):
         return score + grad_logpdf
 
 
-class SecondOrderMomentMatchingGuidance(GuidanceFree):
+class SecondOrderMomentMatching(GuidanceFree):
     """Second order moment matching guidance."""
 
     constraint: Callable[[Array], Array]

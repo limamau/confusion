@@ -81,7 +81,7 @@ def main(args):
     ref_A, ref_B = get_joint(sample_size, key)
     plt.figure(figsize=FIGSIZE)
     plt.subplot(1, 2, 1)
-    title = "No intervention - reference"
+    title = "unconditional - reference"
     print(title)
     print_mean_and_variance(ref_A, ref_B)
     plt.hist(ref_A.flatten(), bins=BINS, alpha=ALPHA, label="A")
@@ -107,7 +107,7 @@ def main(args):
     )
     end_time = time.time()
     gen_A, gen_B = jnp.split(gen_samples, num_variables, axis=1)
-    title = "No intervention - generative model"
+    title = "unconditional - generative model"
     print(title)
     print("Sampling time: {:.2f} seconds".format(end_time - start_time))
     print_mean_and_variance(gen_A, gen_B)
