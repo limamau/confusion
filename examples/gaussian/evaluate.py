@@ -60,8 +60,8 @@ def main(args):
     # define guidances
     y, _, _ = normalize(
         y,
-        ref_samples_mean,
-        ref_samples_std,
+        ref_samples_mean[0],
+        ref_samples_std[0],
         imposed_std=sigma_data,
     )
     post_conds = jnp.repeat(y[:, None], sample_size, axis=0)

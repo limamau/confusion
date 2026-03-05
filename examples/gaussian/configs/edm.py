@@ -42,8 +42,8 @@ class Config:
     )
 
     # 4. sde
-    sigma_min = 0.05
-    sigma_max = 2.0
+    sigma_min = 0.01
+    sigma_max = 10.0
     is_approximate = False
     sde = VarianceExploding(
         sigma_min,

@@ -68,6 +68,7 @@ def main(args):
         t1=t1,
         ckpter=ckpter,
         time_schedule=time_schedule,
+        ema_rate=0.0,
     )
 
 
