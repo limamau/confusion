@@ -155,7 +155,7 @@ class DenoiserDiffusionModel(AbstractDiffusionModel):
         c_noise = 0.25 * jnp.log(sigma)
         left_side = c_skip * x
         net_x = c_in * x
-        net_sigma = c_noise * sigma
+        net_sigma = c_noise  # * sigma
         right_side = c_out * self.network(net_x, net_sigma, c, key=key)
         return left_side + right_side
 
