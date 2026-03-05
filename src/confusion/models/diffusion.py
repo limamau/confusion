@@ -54,8 +54,6 @@ class AbstractDiffusionModel(AbstractModel[AbstractSDE]):
         post_conds: Optional[Array] = None,
     ) -> Tuple[Array, Array]:
         f = self.diffeq.drift(x, t)
-        # g = self.diffeq.diffusion(t)
-        # g2 = jnp.square(g)
 
         def score_fn(x, t):
             return self.score(x, t, pre_conds, key=None)
