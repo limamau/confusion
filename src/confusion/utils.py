@@ -65,7 +65,7 @@ def normalize(
     original_std: Optional[Array] = None,
     imposed_mean: Union[Array, float] = 0.0,
     imposed_std: Union[Array, float] = 1.0,
-    axis: Union[int, Sequence[int], None] = None,
+    axis: Union[int, Sequence[int], None] = 0,
 ) -> Tuple[Array, Array, Array]:
     if original_mean is None:
         original_mean = jnp.mean(data, axis=axis)
