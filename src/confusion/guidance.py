@@ -171,14 +171,9 @@ class FirstOrderMomentMatching(GuidanceFree):
             loc = self._constraint_flat_wrap(x0_hat)
 
             # covariance
-            grad_x0_hat = jax.jacrev(x0_hat_fn)(x_)
-            grad_x0_hat_2d = grad_x0_hat.reshape(grad_x0_hat.shape[0], -1)  # pyright: ignore
-            Sigma_hat = (sigma_t2 / mu_t) * grad_x0_hat_2d
-
             gradC = jax.jacrev(self._constraint_flat_wrap)(x0_hat)
             gradC_2d = gradC.reshape(gradC.shape[0], -1)
-
-            cov = gradC_2d @ Sigma_hat @ gradC_2d.T
+            cov = gradC_2d @ gradC_2d.T * sigma_t2 / mu_t**2
             cov = jax.lax.stop_gradient(cov)
 
             return jnp.squeeze(self.condition(flat_post_conds, loc, cov))
