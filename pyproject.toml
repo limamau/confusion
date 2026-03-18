@@ -16,6 +16,7 @@ dependencies = [
     "einops",
     "equinox",
     "jax",
+    "jaxtyping",
     "matplotlib",
     "optax",
     "orbax",

@@ -105,15 +105,16 @@ class VarianceExploding(AbstractSDE):
         # this is a good approximation for sigma_max >> sigma_min
         if is_approximate:
             self.sigma_fn = lambda t: sigma_min * jnp.pow((sigma_max / sigma_min), t)
-            self.t_fn = lambda sigma: jnp.log(sigma / sigma_min) / jnp.log(
-                sigma_max / sigma_min
+            self.t_fn = lambda sigma: (
+                jnp.log(sigma / sigma_min) / jnp.log(sigma_max / sigma_min)
             )
         else:
-            self.sigma_fn = lambda t: sigma_min * jnp.sqrt(
-                jnp.pow(sigma_max / sigma_min, 2 * t) - 1
+            self.sigma_fn = lambda t: (
+                sigma_min * jnp.sqrt(jnp.pow(sigma_max / sigma_min, 2 * t) - 1)
             )
-            self.t_fn = lambda sigma: jnp.log(sigma**2 / sigma_min**2 + 1) / (
-                2 * jnp.log(sigma_max / sigma_min)
+            self.t_fn = lambda sigma: (
+                jnp.log(sigma**2 / sigma_min**2 + 1)
+                / (2 * jnp.log(sigma_max / sigma_min))
             )
 
     def mu(self, t: Array) -> Array:
