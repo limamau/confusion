@@ -74,7 +74,7 @@ def main():
     )
 
     # restore
-    model, _ = ckpter.restore(model, opt)
+    model, _ = ckpter.restore_net(model, opt)
 
     # generate samples
     print("generating samples...")

@@ -75,7 +75,7 @@ def main(args):
     )
 
     # restore
-    model, _ = ckpter.restore(model, opt)
+    model, _ = ckpter.restore_net(model, opt)
 
     # unconditional - reference
     ref_A, ref_B = get_joint(sample_size, key)

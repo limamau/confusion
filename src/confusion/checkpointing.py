@@ -1,10 +1,11 @@
 import os
 import shutil
-from typing import Tuple
+from typing import Optional, Tuple
 
 import equinox as eqx
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+from jaxtyping import Array
 from optax import GradientTransformation, OptState
 
 from confusion.models import AbstractModel
@@ -18,6 +19,7 @@ class Checkpointer:
         save_every: int,
         erase: bool = False,
         saving_criteria: str = "recency",
+        norms_dict: Optional[dict[str, Array]] = None,
     ):
         self.saving_path = saving_path
         self.save_every = save_every
@@ -37,6 +39,11 @@ class Checkpointer:
                 shutil.rmtree(saving_path)
         os.makedirs(saving_path, exist_ok=True)
 
+        self.norms_path = os.path.join(saving_path, "norms/norms.npz")
+        if norms_dict is not None and len(norms_dict) > 0:
+            os.makedirs(os.path.dirname(self.norms_path))
+            jnp.savez(self.norms_path, **norms_dict)  # type: ignore
+
         options = ocp.CheckpointManagerOptions(
             max_to_keep=max_save_to_keep,
             save_interval_steps=save_every,
@@ -50,7 +57,7 @@ class Checkpointer:
             item_names=("model", "opt_state"),
         )
 
-    def restore(
+    def restore_net(
         self,
         abstract_model: AbstractModel,
         opt: GradientTransformation,
@@ -76,8 +83,8 @@ class Checkpointer:
             step,
             args=ocp.args.Composite(
                 **{
-                    "model": ocp.args.StandardRestore(saveable_model),  # pyright: ignore
-                    "opt_state": ocp.args.StandardRestore(opt_state),  # pyright: ignore
+                    "model": ocp.args.StandardRestore(saveable_model),  # type: ignore
+                    "opt_state": ocp.args.StandardRestore(opt_state),  # type: ignore
                 }
             ),
         )
@@ -87,6 +94,11 @@ class Checkpointer:
         opt_state = restored["opt_state"]
 
         return model, opt_state
+
+    def restore_norms(self) -> dict[str, jnp.ndarray]:
+        assert os.path.exists(self.norms_path)
+        loaded = jnp.load(self.norms_path)
+        return {key: loaded[key] for key in loaded.files}  # type: ignore
 
     def save(
         self,
@@ -102,10 +114,10 @@ class Checkpointer:
             args=ocp.args.Composite(
                 **{
                     "model": ocp.args.StandardSave(
-                        eqx.filter(model, eqx.is_inexact_array)  # pyright: ignore
+                        eqx.filter(model, eqx.is_inexact_array)  # type: ignore
                     ),
                     "opt_state": ocp.args.StandardSave(
-                        eqx.filter(opt_state, eqx.is_inexact_array)  # pyright: ignore
+                        eqx.filter(opt_state, eqx.is_inexact_array)  # type: ignore
                     ),
                 }
             ),

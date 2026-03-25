@@ -57,7 +57,7 @@ def main(args):
     )
 
     # restore
-    model, _ = ckpter.restore(model, opt)
+    model, _ = ckpter.restore_net(model, opt)
 
     # reference
     plt.figure()
