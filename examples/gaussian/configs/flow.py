@@ -5,7 +5,7 @@ import jax.random as jr
 import optax
 
 from confusion.diffeqs.odes import OTFlowMatching
-from confusion.guidance import ManifoldGuidance
+from confusion.guidance import ClampingGuidance
 from confusion.models.flow import StandardFlowMatching
 from confusion.networks import MultiLayerPerceptron
 from confusion.sampling import ScheduledEulerSampler
@@ -80,4 +80,4 @@ class Config:
     a = 1.0
     mask = jnp.array([True, False])
     y = jnp.array([a])
-    guidance = ManifoldGuidance(mask)
+    guidance = ClampingGuidance(mask)

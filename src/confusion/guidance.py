@@ -4,7 +4,6 @@ from typing import Callable, Optional, Union
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from jax.flatten_util import ravel_pytree
 from jaxtyping import Array, ArrayLike, Key
 
 from confusion.diffeqs.abstract import AbstractDiffEq
@@ -117,10 +116,8 @@ class FirstOrderMomentMatching(GuidanceFree):
         # constraint
         if isinstance(constraint, Array):
             self.constraint = lambda x: constraint @ x
-            # self.gradC = lambda x: self._flatten(constraint)
         elif isinstance(constraint, Callable):
             self.constraint = constraint
-            # self.gradC = lambda x: jax.jacrev(constraint)(x)
         else:
             raise ValueError("Invalid constraint type: {}".format(type(constraint)))
 
@@ -133,14 +130,6 @@ class FirstOrderMomentMatching(GuidanceFree):
             self.condition = jax.scipy.stats.norm.logcdf
         else:
             raise ValueError("Invalid condition type: {}".format(condition))
-
-    @staticmethod
-    def _flatten(z: Array):
-        z_flat, _ = ravel_pytree(z)
-        return z_flat
-
-    def _constraint_flat_wrap(self, x: Array) -> Array:
-        return self._flatten(self.constraint(x))
 
     def apply_on_score(
         self,
@@ -163,20 +152,16 @@ class FirstOrderMomentMatching(GuidanceFree):
             return (x + sigma_t2 * score_fn(x, t)) / mu_t
 
         def log_pdf_fn(x_: Array) -> Array:
-            # variable
-            flat_post_conds = self._flatten(post_conds)
-
             # mean
             x0_hat = x0_hat_fn(x_)
-            loc = self._constraint_flat_wrap(x0_hat)
+            loc = self.constraint(x0_hat)
 
             # covariance
-            gradC = jax.jacrev(self._constraint_flat_wrap)(x0_hat)
-            gradC_2d = gradC.reshape(gradC.shape[0], -1)
-            cov = gradC_2d @ gradC_2d.T * sigma_t2 / mu_t**2
+            gradC = jax.jacrev(self.constraint)(x0_hat)
+            cov = gradC @ gradC.T * sigma_t2 / mu_t**2
             cov = jax.lax.stop_gradient(cov)
 
-            return jnp.squeeze(self.condition(flat_post_conds, loc, cov))
+            return jnp.squeeze(self.condition(post_conds, loc, cov))
 
         # gradient wrt x
         grad_logpdf = eqx.filter_grad(log_pdf_fn)(x)
@@ -205,10 +190,8 @@ class SecondOrderMomentMatching(GuidanceFree):
         # constraint
         if isinstance(constraint, Array):
             self.constraint = lambda x: constraint @ x
-            # self.gradC = lambda x: self._flatten(constraint)
         elif isinstance(constraint, Callable):
             self.constraint = constraint
-            # self.gradC = lambda x: jax.jacrev(constraint)(x)
         else:
             raise ValueError("Invalid constraint type: {}".format(type(constraint)))
 
@@ -221,14 +204,6 @@ class SecondOrderMomentMatching(GuidanceFree):
             self.condition = jax.scipy.stats.norm.logcdf
         else:
             raise ValueError("Invalid condition type: {}".format(condition))
-
-    @staticmethod
-    def _flatten(z: Array):
-        z_flat, _ = ravel_pytree(z)
-        return z_flat
-
-    def _constraint_flat_wrap(self, x: Array) -> Array:
-        return self._flatten(self.constraint(x))
 
     def apply_on_score(
         self,
@@ -251,24 +226,21 @@ class SecondOrderMomentMatching(GuidanceFree):
             return (x + sigma_t2 * score_fn(x, t)) / mu_t
 
         def log_pdf_fn(x_: Array) -> Array:
-            # variable
-            flat_post_conds = self._flatten(post_conds)
-
             # mean
             x0_hat = x0_hat_fn(x_)
-            loc = self._constraint_flat_wrap(x0_hat)
+            loc = self.constraint(x0_hat)
             grad_x0_hat = jax.jacrev(x0_hat_fn)(x_)
             grad_x0_hat_2d = grad_x0_hat.reshape(grad_x0_hat.shape[0], -1)  # pyright: ignore
             Sigma_hat = (sigma_t2 / mu_t) * grad_x0_hat_2d
 
             # covariance
-            gradC = jax.jacrev(self._constraint_flat_wrap)(x0_hat)
+            gradC = jax.jacrev(self.constraint)(x0_hat)
             gradC_2d = gradC.reshape(gradC.shape[0], -1)
 
             cov = gradC_2d @ Sigma_hat @ gradC_2d.T
             cov = jax.lax.stop_gradient(cov)
 
-            return jnp.squeeze(self.condition(flat_post_conds, loc, cov))
+            return jnp.squeeze(self.condition(post_conds, loc, cov))
 
         # gradient wrt x
         grad_logpdf = eqx.filter_grad(log_pdf_fn)(x)
@@ -279,8 +251,8 @@ class SecondOrderMomentMatching(GuidanceFree):
         return score + grad_logpdf
 
 
-class ManifoldGuidance(GuidanceFree):
-    """Manifold guidance is basically moving things manually to the conditions."""
+class ClampingGuidance(GuidanceFree):
+    """Clamping guidance is basically moving things manually to the conditions."""
 
     mask: Array
 
